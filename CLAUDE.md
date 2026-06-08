@@ -120,3 +120,8 @@ between calls. `firebase.service` is intentionally not unit-tested (Firebase-emu
   Firebase Hosting `live`. The deploy credential is the repo **secret**
   `FIREBASE_SERVICE_ACCOUNT_PICKLEBALL_COURT_MANAGEMENT`. Live site:
   https://pickleball-court-management.web.app
+- **Branch protection.** `main` is protected: land changes via a **PR**, and the `Build & test`
+  CI check must pass before merge (direct pushes are rejected, admins included). Merging still
+  triggers CI → deploy as before. To (re)apply the rule, run
+  `scripts/setup-branch-protection.sh` — requires `gh` authenticated as a repo **admin** (the
+  owner); a write-level collaborator gets HTTP 404.
