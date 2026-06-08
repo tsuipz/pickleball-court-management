@@ -7,7 +7,7 @@ import {
   runTransaction,
   setDoc,
 } from 'firebase/firestore';
-import { SessionState } from '../models/types';
+import { ChallengerPair, SessionState } from '../models/types';
 import { FirebaseService } from './firebase.service';
 import * as rotation from './rotation';
 
@@ -182,16 +182,29 @@ export class SessionService {
    * transaction (read current doc → transform → write whole doc back), so
    * concurrent admin/player edits can't clobber each other. Rejects on failure;
    * the {@link SessionStore} catches it to drive per-action error state.
+   *
+   * Unless `recordUndo` is false, the pre-write state is snapshotted into the
+   * doc's `previous` field so the admin can single-step undo. The snapshot's own
+   * `previous` is nulled so the chain never nests. `undo` itself passes
+   * `recordUndo: false`, making undo a true single step (not itself undoable).
    */
   private async mutate(
     code: string,
     apply: (s: SessionState) => SessionState,
+    { recordUndo = true }: { recordUndo?: boolean } = {},
   ): Promise<void> {
     const ref = this.ref(code);
     await runTransaction(this.fb.db, async (tx) => {
       const snap = await tx.get(ref);
       if (!snap.exists()) throw new Error('Session not found.');
-      tx.set(ref, apply(snap.data() as SessionState));
+      const current = snap.data() as SessionState;
+      const next = apply(current);
+      if (recordUndo) {
+        const prev = structuredClone(current);
+        prev.previous = null;
+        next.previous = prev;
+      }
+      tx.set(ref, next);
     });
   }
 
@@ -263,8 +276,20 @@ export class SessionService {
     return this.mutate(code, (s) => rotation.reorderQueue(s, newQueue));
   }
 
+  reorderChallengerQueue(code: string, newQueue: ChallengerPair[]): Promise<void> {
+    return this.mutate(code, (s) =>
+      rotation.reorderChallengerQueue(s, newQueue),
+    );
+  }
+
   endSession(code: string): Promise<void> {
     return this.mutate(code, (s) => rotation.endSession(s));
+  }
+
+  /** Single-step undo: restore the snapshot recorded before the last action.
+   *  Not itself undoable (`recordUndo: false`), so undo can't be undone. */
+  undo(code: string): Promise<void> {
+    return this.mutate(code, (s) => rotation.undo(s), { recordUndo: false });
   }
 
   private report(err: unknown, message: string): void {

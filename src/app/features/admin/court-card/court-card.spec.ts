@@ -11,13 +11,15 @@ function court(partial: Partial<Court>): Court {
     status: 'in-progress',
     playerIds: [],
     incumbentPairIds: null,
+    startedAt: null,
     ...partial,
   };
 }
 
 function players(...names: [PlayerId, string][]): Record<PlayerId, Player> {
   const map: Record<PlayerId, Player> = {};
-  for (const [id, name] of names) map[id] = { id, name, joinedAt: 0 };
+  for (const [id, name] of names)
+    map[id] = { id, name, joinedAt: 0, wins: 0, losses: 0 };
   return map;
 }
 

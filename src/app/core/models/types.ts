@@ -12,6 +12,10 @@ export interface Player {
   id: PlayerId;
   name: string;
   joinedAt: number;
+  /** Games won (recorded when a finished game names a winning pair). */
+  wins: number;
+  /** Games lost. */
+  losses: number;
 }
 
 export interface Court {
@@ -26,6 +30,11 @@ export interface Court {
    * `null` for standard courts.
    */
   incumbentPairIds: PlayerId[] | null;
+  /** Epoch ms when the current in-progress game began; `null` while idle.
+   *  Drives the live game timer. Stamped when a court fills, cleared when it
+   *  empties; a court that stays full across an unrelated re-settle keeps its
+   *  original start time. */
+  startedAt: number | null;
 }
 
 /** A waiting pair in the challenger queue. (Firestore disallows nested arrays,
@@ -54,6 +63,10 @@ export interface SessionState {
   /** Ordered challenger queue of waiting pairs (front = next challenger). */
   challengerQueue: ChallengerPair[];
   createdAt: number;
+  /** Snapshot of the state immediately before the last undoable write, for
+   *  single-step undo. `null` when there is nothing to undo. The snapshot's own
+   *  `previous` is always `null` so the chain never nests. */
+  previous: SessionState | null;
 }
 
 /** Where a given player currently is — drives the player status view. */

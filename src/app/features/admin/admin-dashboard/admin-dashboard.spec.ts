@@ -110,7 +110,10 @@ function makeAdmin(state: SessionState | null, uid = 'admin') {
           open: () => ({ afterClosed: () => ({ subscribe: (cb: (r: unknown) => void) => cb(dialogResult) }) }),
         },
       },
-      { provide: MatSnackBar, useValue: { open: () => {} } },
+      {
+        provide: MatSnackBar,
+        useValue: { open: () => ({ onAction: () => ({ subscribe: () => {} }) }) },
+      },
     ],
   });
   const cmp = TestBed.runInInjectionContext(() => new AdminDashboard());
@@ -130,8 +133,8 @@ describe('AdminDashboard computeds', () => {
   it('lists waiting players with their names', () => {
     const { cmp } = makeAdmin(buildState(6));
     expect(cmp.queue()).toEqual([
-      { id: 'p5', name: 'Player 5', pos: 1, me: false },
-      { id: 'p6', name: 'Player 6', pos: 2, me: false },
+      { id: 'p5', name: 'Player 5', pos: 1, me: false, wins: 0, losses: 0 },
+      { id: 'p6', name: 'Player 6', pos: 2, me: false, wins: 0, losses: 0 },
     ]);
   });
 

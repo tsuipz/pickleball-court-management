@@ -105,6 +105,16 @@
           ☕ Take a break
         </button>
       }
+      @if (notifySupported) {
+        <button
+          (click)="toggleNotify()"
+          [title]="notifyOn() ? 'Turn off turn alerts' : 'Get a notification when you’re up'"
+          class="cursor-pointer rounded-full border-2 px-4 py-[0.7rem] text-[0.9rem] font-semibold transition-colors"
+          [class]="notifyOn() ? 'border-ink bg-lime text-ink' : 'border-ink/40 text-ink-soft hover:border-ink hover:text-ink'"
+        >
+          {{ notifyOn() ? '🔔 Alerts on' : '🔕 Notify me' }}
+        </button>
+      }
       <button
         (click)="leave()"
         [disabled]="busy('removePlayer')"
@@ -137,6 +147,9 @@
             >
               <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-court font-display text-[0.85rem] font-extrabold text-paper tabular-nums">{{ item.pos }}</span>
               <span class="flex-1 font-semibold">{{ item.name }}@if (item.me) {<span class="text-clay-deep"> · you</span>}</span>
+              @if (item.wins || item.losses) {
+                <span class="text-[0.72rem] font-bold tabular-nums text-ink-soft" title="Wins–Losses">{{ item.wins }}–{{ item.losses }}</span>
+              }
             </div>
           } @empty {
             <p class="my-[0.3rem] italic text-ink-soft">Queue's empty — hop in!</p>

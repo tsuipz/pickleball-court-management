@@ -11,9 +11,11 @@ import {
   locatePlayer,
   removeCourt,
   removePlayer,
+  reorderChallengerQueue,
   reorderQueue,
   restPlayer,
   setMode,
+  undo,
 } from './rotation';
 
 function base(courtCount = 2): SessionState {
@@ -386,5 +388,143 @@ describe('endSession', () => {
     expect(s.status).toBe('ended');
     s = addPlayer(s, 'p4', 'P4', 4);
     expect(s.courts[0].status).toBe('idle'); // no auto-seat after end
+  });
+});
+
+describe('win/loss tally', () => {
+  it('starts new players at 0–0', () => {
+    const s = withPlayers(base(1), 2);
+    expect(s.players['p1'].wins).toBe(0);
+    expect(s.players['p1'].losses).toBe(0);
+  });
+
+  it('records a win for the pair and a loss for the others on a standard court', () => {
+    const s = withPlayers(base(1), 4); // p1..p4 on court
+    const after = finishStandardGame(s, 'court-1', {
+      winningPairIds: ['p1', 'p2'],
+    });
+    expect(after.players['p1'].wins).toBe(1);
+    expect(after.players['p2'].wins).toBe(1);
+    expect(after.players['p3'].losses).toBe(1);
+    expect(after.players['p4'].losses).toBe(1);
+  });
+
+  it('records nothing on a standard court when no winner is named', () => {
+    const s = withPlayers(base(1), 4);
+    const after = finishStandardGame(s, 'court-1');
+    expect(after.players['p1'].wins).toBe(0);
+    expect(after.players['p1'].losses).toBe(0);
+  });
+
+  it('records the challenger result for winners and losers', () => {
+    let s = withPlayers(base(2), 6);
+    s = setMode(s, 'challenger', 'court-1'); // court-1 = p1..p4
+    s = finishChallengerGame(s, 'court-1', ['p1', 'p2']);
+    expect(s.players['p1'].wins).toBe(1);
+    expect(s.players['p3'].losses).toBe(1);
+    expect(s.players['p4'].losses).toBe(1);
+  });
+
+  it('keeps a returning player’s tally on a re-join', () => {
+    let s = withPlayers(base(1), 4);
+    s = finishStandardGame(s, 'court-1', { winningPairIds: ['p1', 'p2'] });
+    expect(s.players['p1'].wins).toBe(1);
+    s = addPlayer(s, 'p1', 'Renamed', 50);
+    expect(s.players['p1'].wins).toBe(1); // tally preserved
+    expect(s.players['p1'].name).toBe('Renamed');
+  });
+});
+
+describe('game timer (startedAt)', () => {
+  it('stamps startedAt when a court starts a game', () => {
+    let s = withPlayers(base(1), 3);
+    expect(s.courts[0].startedAt).toBeNull(); // not yet full
+    s = addPlayer(s, 'p4', 'P4', 4242); // fourth player fills the court
+    expect(s.courts[0].status).toBe('in-progress');
+    expect(s.courts[0].startedAt).toBe(4242);
+  });
+
+  it('clears startedAt when a court empties with no one to seat', () => {
+    let s = withPlayers(base(1), 5);
+    s = removePlayer(s, 'p2');
+    s = removePlayer(s, 'p3');
+    const after = finishStandardGame(s, 'court-1', {}, 9000);
+    expect(after.courts[0].status).toBe('idle');
+    expect(after.courts[0].startedAt).toBeNull();
+  });
+
+  it('restamps startedAt for the fresh game pulled on after a finish', () => {
+    const s = withPlayers(base(1), 8); // court p1..p4, queue p5..p8
+    const after = finishStandardGame(s, 'court-1', {}, 7777);
+    expect(after.courts[0].playerIds).toEqual(['p5', 'p6', 'p7', 'p8']);
+    expect(after.courts[0].startedAt).toBe(7777);
+  });
+
+  it('keeps the original start time across an unrelated re-settle', () => {
+    let s = withPlayers(base(2), 4); // court-1 full at now=4
+    const started = s.courts[0].startedAt;
+    s = addPlayer(s, 'p5', 'P5', 5); // unrelated change, court-1 stays full
+    expect(s.courts[0].startedAt).toBe(started);
+  });
+});
+
+describe('undo (single step)', () => {
+  it('restores the previous snapshot and clears it', () => {
+    const before = withPlayers(base(1), 3);
+    const acted = addPlayer(before, 'p4', 'P4', 4);
+    const withPrev: SessionState = { ...acted, previous: before };
+    const back = undo(withPrev);
+    expect(back.queue).toEqual(before.queue);
+    expect(back.players['p4']).toBeUndefined();
+    expect(back.previous).toBeNull();
+  });
+
+  it('is a no-op when there is nothing to undo', () => {
+    const s = withPlayers(base(1), 3);
+    const back = undo(s);
+    expect(back.queue).toEqual(s.queue);
+    expect(back.previous).toBeNull();
+  });
+});
+
+describe('reorderChallengerQueue', () => {
+  /** Build a session with two promoted pairs waiting in the challenger queue. */
+  function twoPairs(): SessionState {
+    let s = withPlayers(base(3), 12);
+    s = setMode(s, 'challenger', 'court-1'); // c1=p1..4, c2=p5..8, c3=p9..12
+    s = finishStandardGame(s, 'court-2', {
+      winningPairIds: ['p5', 'p6'],
+      promote: true,
+    });
+    s = finishStandardGame(s, 'court-3', {
+      winningPairIds: ['p9', 'p10'],
+      promote: true,
+    });
+    return s;
+  }
+
+  it('reorders the waiting pairs', () => {
+    const s = twoPairs();
+    expect(s.challengerQueue.map((p) => p.playerIds)).toEqual([
+      ['p5', 'p6'],
+      ['p9', 'p10'],
+    ]);
+    const after = reorderChallengerQueue(s, [
+      { playerIds: ['p9', 'p10'] },
+      { playerIds: ['p5', 'p6'] },
+    ]);
+    expect(after.challengerQueue.map((p) => p.playerIds)).toEqual([
+      ['p9', 'p10'],
+      ['p5', 'p6'],
+    ]);
+  });
+
+  it('appends any dropped pair at the back', () => {
+    const s = twoPairs();
+    const after = reorderChallengerQueue(s, [{ playerIds: ['p9', 'p10'] }]);
+    expect(after.challengerQueue.map((p) => p.playerIds)).toEqual([
+      ['p9', 'p10'],
+      ['p5', 'p6'],
+    ]);
   });
 });

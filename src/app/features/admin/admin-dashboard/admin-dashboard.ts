@@ -67,6 +67,8 @@ export class AdminDashboard {
   readonly me = this.store.me;
   readonly myResting = this.store.myResting;
   readonly benched = this.store.benched;
+  readonly canUndo = this.store.canUndo;
+  readonly leaderboard = this.store.leaderboard;
 
   private claimTried = false;
 
@@ -177,10 +179,21 @@ export class AdminDashboard {
     }
   }
 
+  /** Revert the last action (single step). */
+  undo(): void {
+    this.store.undo({ code: this.code });
+  }
+
   drop(event: CdkDragDrop<unknown>): void {
     const ids = this.queue().map((q) => q.id);
     moveItemInArray(ids, event.previousIndex, event.currentIndex);
     this.store.reorderQueue({ code: this.code, newQueue: ids });
+  }
+
+  dropChallenger(event: CdkDragDrop<unknown>): void {
+    const pairs = [...(this.state()?.challengerQueue ?? [])];
+    moveItemInArray(pairs, event.previousIndex, event.currentIndex);
+    this.store.reorderChallengerQueue({ code: this.code, newQueue: pairs });
   }
 
   finishGame(court: Court): void {
@@ -205,6 +218,7 @@ export class AdminDashboard {
               courtId: court.id,
               winningPairIds: result.winningPairIds,
             });
+            this.offerUndo();
           }
         } else {
           this.store.finishStandardGame({
@@ -215,8 +229,17 @@ export class AdminDashboard {
               promote: result.promote,
             },
           });
+          this.offerUndo();
         }
       });
+  }
+
+  /** Show a snackbar with a quick Undo action after finishing a game. */
+  private offerUndo(): void {
+    this.snack
+      .open('Game finished', 'Undo', { duration: 5000 })
+      .onAction()
+      .subscribe(() => this.undo());
   }
 
   async copyLink(): Promise<void> {

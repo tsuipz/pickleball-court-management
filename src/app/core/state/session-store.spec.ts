@@ -170,8 +170,8 @@ describe('SessionStore selectors', () => {
   it('maps the queue with position + "me" flags', () => {
     const { store } = makeLive(buildState(6), 'p5');
     expect(store.queue()).toEqual([
-      { id: 'p5', name: 'Player 5', pos: 1, me: true },
-      { id: 'p6', name: 'Player 6', pos: 2, me: false },
+      { id: 'p5', name: 'Player 5', pos: 1, me: true, wins: 0, losses: 0 },
+      { id: 'p6', name: 'Player 6', pos: 2, me: false, wins: 0, losses: 0 },
     ]);
   });
 

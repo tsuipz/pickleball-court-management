@@ -14,14 +14,22 @@ const COURT: Court = {
   status: 'in-progress',
   playerIds: ['a', 'b', 'c', 'd'],
   incumbentPairIds: ['a', 'b'],
+  startedAt: null,
 };
 
 function players(): Record<PlayerId, Player> {
+  const p = (id: string, name: string): Player => ({
+    id,
+    name,
+    joinedAt: 0,
+    wins: 0,
+    losses: 0,
+  });
   return {
-    a: { id: 'a', name: 'Alice', joinedAt: 0 },
-    b: { id: 'b', name: 'Bob', joinedAt: 0 },
-    c: { id: 'c', name: 'Carol', joinedAt: 0 },
-    d: { id: 'd', name: 'Dave', joinedAt: 0 },
+    a: p('a', 'Alice'),
+    b: p('b', 'Bob'),
+    c: p('c', 'Carol'),
+    d: p('d', 'Dave'),
   };
 }
 
