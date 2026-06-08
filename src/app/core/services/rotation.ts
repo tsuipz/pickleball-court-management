@@ -104,7 +104,7 @@ export function createInitialSessionState(args: {
   code: string;
   name: string;
   adminUid: string;
-  adminToken: string;
+  adminTokenHash: string;
   courtCount: number;
   createdAt: number;
   /** When set, the admin is added as a player (in the queue) right away. */
@@ -125,7 +125,7 @@ export function createInitialSessionState(args: {
     code: args.code,
     name: args.name,
     adminUid: args.adminUid,
-    adminToken: args.adminToken,
+    adminTokenHash: args.adminTokenHash,
     status: 'active',
     mode: 'standard',
     challengerCourtId: null,

@@ -10,6 +10,22 @@ import { SessionService } from './session.service';
 // In-memory Firestore stand-in (hoisted so the vi.mock factory can see it).
 const h = vi.hoisted(() => ({ store: {} as Record<string, SessionState> }));
 
+// SHA-256('secret-token') — the doc stores this hash; claimAdmin hashes the
+// presented plaintext token and compares. Kept in sync with hashToken().
+const SECRET_TOKEN_HASH =
+  '930bbdc51b6aed5c2a5678fd6e28dee7a05e8a4b643cfc0b4427c3efb86c0d94';
+
+/** Same hex SHA-256 as SessionService.hashToken, for asserting correspondence. */
+async function sha256Hex(token: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(token),
+  );
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 vi.mock('firebase/firestore', () => {
   const snap = (id: string) => ({
     exists: () => h.store[id] !== undefined,
@@ -66,7 +82,7 @@ function seed(code: string, partial: Partial<SessionState> = {}): SessionState {
     code,
     name: 'Seeded',
     adminUid: 'admin',
-    adminToken: 'secret-token',
+    adminTokenHash: SECRET_TOKEN_HASH,
     courtCount: 2,
     createdAt: 0,
   });
@@ -86,7 +102,11 @@ describe('SessionService.createSession', () => {
     expect(state.adminUid).toBe('admin');
     expect(state.players['admin'].name).toBe('Pat'); // organizer auto-joined
     expect(state.queue).toContain('admin');
-    expect(localStorage.getItem(`dink:admin:${code}`)).toBe(state.adminToken);
+    // The doc holds only the hash; the plaintext token lives in localStorage.
+    const stored = localStorage.getItem(`dink:admin:${code}`);
+    expect(stored).toMatch(/^[A-HJ-NP-Z2-9]{24}$/);
+    expect(state.adminTokenHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(state.adminTokenHash).toBe(await sha256Hex(stored!));
   });
 
   it('falls back to a default name and leaves the admin out when no name given', async () => {
@@ -162,7 +182,7 @@ describe('SessionService gameplay mutations', () => {
 describe('SessionService admin recovery', () => {
   it('claimAdmin succeeds with the right token and reassigns adminUid', async () => {
     const { svc, fb } = setup('newdevice');
-    seed('ABCDE'); // adminToken = 'secret-token', adminUid = 'admin'
+    seed('ABCDE'); // hash of 'secret-token', adminUid = 'admin'
     const ok = await svc.claimAdmin('ABCDE', 'secret-token');
     expect(ok).toBe(true);
     expect(h.store['ABCDE'].adminUid).toBe('newdevice');

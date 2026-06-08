@@ -64,7 +64,7 @@ export class SessionService {
       code,
       name: name.trim() || 'Pickleball Session',
       adminUid: uid,
-      adminToken,
+      adminTokenHash: await this.hashToken(adminToken),
       courtCount,
       createdAt: Date.now(),
       adminName,
@@ -152,13 +152,14 @@ export class SessionService {
     const uid = this.fb.uid();
     if (!uid || !token) return false;
     const ref = this.ref(code);
+    const candidateHash = await this.hashToken(token);
     let ok = false;
     try {
       await runTransaction(this.fb.db, async (tx) => {
         const snap = await tx.get(ref);
         if (!snap.exists()) return;
         const s = snap.data() as SessionState;
-        if (s.adminToken && s.adminToken === token) {
+        if (s.adminTokenHash && s.adminTokenHash === candidateHash) {
           tx.update(ref, { adminUid: uid });
           ok = true;
         }
@@ -279,5 +280,20 @@ export class SessionService {
       out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
     }
     return out;
+  }
+
+  /**
+   * SHA-256 of a token as a lowercase hex string. Only the hash is stored in
+   * the (readable) session doc, so the bearer token never has to leave the
+   * admin's device — a snooper who reads the doc cannot reconstruct it.
+   */
+  private async hashToken(token: string): Promise<string> {
+    const digest = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(token),
+    );
+    return Array.from(new Uint8Array(digest))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 }

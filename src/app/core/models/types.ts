@@ -38,9 +38,11 @@ export interface SessionState {
   code: string; // join code, also the Firestore document id
   name: string;
   adminUid: string;
-  /** Bearer secret that lets another device re-claim the admin role.
-   *  Distributed only via the admin transfer link (never the player link). */
-  adminToken: string;
+  /** SHA-256 hash (hex) of the admin bearer token. The plaintext token lets
+   *  another device re-claim the admin role and is distributed only via the
+   *  admin transfer link (never the player link); it lives on the admin's
+   *  device (localStorage) and in that link, but never in this readable doc. */
+  adminTokenHash: string;
   status: SessionStatus;
   mode: SessionMode;
   challengerCourtId: CourtId | null;

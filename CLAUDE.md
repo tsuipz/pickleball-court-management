@@ -72,11 +72,14 @@ fire-and-forget; pages render immediately and show a loading state until `uid` r
 - **Teams are derived, not stored.** `CourtCard` splits the 4 players into Team 1 / Team 2:
   on a standard court that's first-two / last-two; on the challenger court it's the
   `incumbentPairIds` (the staying winners) vs. the rest.
-- **Admin identity** = `adminUid` + `adminToken`. The token is a bearer secret stored in the
-  (readable) session doc that lets a returning admin reclaim the role on another device via
-  the `?t=<token>` admin link. Documented trade-off in `firestore.rules`: anyone with the
-  code can read it / make gameplay writes — fine for a known group, not a hostile audience
-  (harden by moving writes behind Cloud Functions).
+- **Admin identity** = `adminUid` + `adminTokenHash`. The plaintext token is a bearer secret
+  that lets a returning admin reclaim the role on another device via the `?t=<token>` admin
+  link; it lives only on the admin's device (localStorage) and in that link. The doc stores
+  only its **SHA-256 hash** (`SessionService.hashToken`), so reading the doc no longer leaks
+  the secret, and `firestore.rules` forbids a non-admin from changing `adminUid` *or*
+  `adminTokenHash` — blocking admin seizure by a code-holder. Remaining documented trade-off:
+  anyone with the code can still make *gameplay* writes — fine for a known group, not a
+  hostile audience (harden by moving writes behind Cloud Functions).
 
 **Routes** (`app.routes.ts`, all lazy): `/` create session · `/session/:code` player view ·
 `/session/:code/admin` admin. The admin route's component reclaims admin with a token or
