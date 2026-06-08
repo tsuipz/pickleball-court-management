@@ -40,13 +40,26 @@ This makes every change atomic and lets one listener drive the whole UI. Consequ
   `rotation.spec.ts`. **Never reimplement rotation rules in a component or service** —
   call `rotation.*` and persist the result.
 - **`SessionService.mutate()`** is the only write path: it runs a Firestore **transaction**
-  that reads the doc, applies a pure rotation function, and writes the whole doc back.
-  This trades latency (a server round-trip per action, no offline echo) for correctness
-  under concurrent admin/player edits.
-- **`SessionService.watch()`** exposes the live doc as an Angular **signal** via
-  `onSnapshot`. Critical: it attaches the listener only *after* anonymous auth lands
-  (a signal `effect` on `FirebaseService.uid`), because `onSnapshot` does **not** recover
-  from an initial permission-denied error. Do not attach reads before `uid` is set.
+  that reads the doc, applies a pure rotation function, and writes the whole doc back, then
+  **rethrows** on failure. This trades latency (a server round-trip per action, no offline
+  echo) for correctness under concurrent admin/player edits. `SessionService` is otherwise a
+  thin Firebase data layer (`listen()`, `createSession()`, `claimAdmin()`); it does **not**
+  hold the live state or surface gameplay errors.
+- **`SessionStore`** (`core/state/session-store.ts`, an `@ngrx/signals` SignalStore provided
+  at the session **routes**) is the client-side state + UX layer. It owns the single live
+  listener (via `SessionService.listen()`), the shared selectors both views read (`queue`,
+  `challengerPairs`, `benched`, `status`, `me`, `isAdmin`, …), and per-action `pending`/`error`
+  state. Components call `store.connect(code)` then read selectors and call store mutators
+  (`store.join(...)`, `store.finishStandardGame(...)`) — **never** `SessionService` mutators
+  directly. Each mutator is an `rxMethod` that **delegates the write to `SessionService`**
+  (rotation rules stay in `rotation.ts`), guards repeat taps of the same action+target, and
+  surfaces failures. Use the `busy(action)` helper in templates to disable a control while
+  its action runs.
+- **`SessionService.listen()`** attaches the `onSnapshot` listener only *after* anonymous auth
+  lands (a signal `effect` on `FirebaseService.uid`), because `onSnapshot` does **not** recover
+  from an initial permission-denied error. Do not attach reads before `uid` is set. `SessionStore`
+  additionally re-attaches the listener on stream errors and on `online`/`visibilitychange`,
+  so the live view recovers from offline/auth hiccups.
 
 **Firebase setup is performance-tuned** (`core/services/firebase.service.ts`): Firestore
 uses `experimentalAutoDetectLongPolling` + a persistent IndexedDB cache (Safari/perf), and
@@ -87,11 +100,14 @@ redirects non-admins to the player view (an `effect` in `AdminDashboard`).
 ## Testing
 
 Tests run on **vitest** via the `@angular/build:unit-test` builder (no Karma/Chrome).
-Highest-value coverage is the pure `rotation.ts` engine. Component tests instantiate via
-`TestBed` and read computeds directly (often without `detectChanges`), using lightweight
-**fakes** with real signals rather than Firebase mocks. `session.service`/`firebase.service`
-are intentionally not unit-tested — those belong in Firebase-emulator integration tests, not
-mock-heavy units.
+Highest-value coverage is the pure `rotation.ts` engine. Component and `SessionStore` tests
+instantiate via `TestBed` and read selectors directly (often without `detectChanges`), using
+a lightweight **fake `SessionService`** with real signals (its `listen()` feeds a snapshot to
+the store and its mutators record calls / return controllable promises) rather than Firebase
+mocks. The store's per-action `pending` guard means a second call to the *same* action+target
+is dropped until the first settles — so sequential same-action tests must `await` a tick
+between calls. `firebase.service` is intentionally not unit-tested (Firebase-emulator territory);
+`session.service` has a thin spec backed by an in-memory Firestore stand-in.
 
 ## CI/CD
 

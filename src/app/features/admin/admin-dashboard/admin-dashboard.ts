@@ -3,13 +3,7 @@ import {
   DragDropModule,
   moveItemInArray,
 } from '@angular/cdk/drag-drop';
-import {
-  Component,
-  DestroyRef,
-  computed,
-  effect,
-  inject,
-} from '@angular/core';
+import { Component, effect, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -17,8 +11,8 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Court, PlayerId } from '../../../core/models/types';
-import { benchedPlayers, locatePlayer } from '../../../core/services/rotation';
 import { SessionService } from '../../../core/services/session.service';
+import { SessionStore } from '../../../core/state/session-store';
 import { CourtCard } from '../court-card/court-card';
 import {
   EndGameData,
@@ -29,12 +23,14 @@ import { NameDialog } from '../name-dialog/name-dialog';
 
 /**
  * Admin control surface (route `/session/:code/admin`). Shows live courts and
- * queues and drives every gameplay action through {@link SessionService}.
+ * queues and drives every gameplay action through the route-scoped
+ * {@link SessionStore}.
  *
  * Access control: a constructor `effect` watches the live state — if this
  * device isn't the admin it tries to reclaim the role with a token (from the
- * `?t=` transfer link or localStorage) and otherwise redirects to the player
- * view. The organizer can also play, bench themselves, and reorder the queue.
+ * `?t=` transfer link or localStorage, via {@link SessionService}) and otherwise
+ * redirects to the player view. The organizer can also play, bench themselves,
+ * and reorder the queue.
  */
 @Component({
   selector: 'app-admin-dashboard',
@@ -50,6 +46,7 @@ import { NameDialog } from '../name-dialog/name-dialog';
   styleUrl: './admin-dashboard.scss',
 })
 export class AdminDashboard {
+  private readonly store = inject(SessionStore);
   private readonly sessions = inject(SessionService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -60,48 +57,25 @@ export class AdminDashboard {
     this.route.snapshot.paramMap.get('code') ?? ''
   ).toUpperCase();
 
-  readonly state = this.sessions.watch(this.code, inject(DestroyRef));
-
-  readonly queue = computed(() => {
-    const s = this.state();
-    if (!s) return [];
-    return s.queue.map((id) => ({ id, name: s.players[id]?.name ?? '—' }));
-  });
-
-  readonly challengerPairs = computed(() => {
-    const s = this.state();
-    if (!s) return [];
-    return s.challengerQueue.map((pair) => ({
-      names: pair.playerIds
-        .map((id) => s.players[id]?.name ?? '—')
-        .join(' & '),
-    }));
-  });
-
-  /** The admin's own player record, if they're playing. */
-  readonly me = computed(() => {
-    const s = this.state();
-    const uid = this.sessions.uid();
-    return s && uid ? (s.players[uid] ?? null) : null;
-  });
-
-  readonly myResting = computed(() => {
-    const s = this.state();
-    const uid = this.sessions.uid();
-    return !!s && !!uid && locatePlayer(s, uid).kind === 'idle';
-  });
-
-  readonly benched = computed(() => {
-    const s = this.state();
-    return s ? benchedPlayers(s) : [];
-  });
+  // Shared, store-owned state + selectors.
+  readonly state = this.store.state;
+  readonly conn = this.store.conn;
+  readonly error = this.store.error;
+  readonly busy = this.store.busy;
+  readonly queue = this.store.queue;
+  readonly challengerPairs = this.store.challengerPairs;
+  readonly me = this.store.me;
+  readonly myResting = this.store.myResting;
+  readonly benched = this.store.benched;
 
   private claimTried = false;
 
   constructor() {
+    this.store.connect(this.code);
+
     effect(() => {
       const s = this.state();
-      const uid = this.sessions.uid();
+      const uid = this.store.uid();
       if (!s || !uid) return;
       if (s.adminUid === uid) return; // already the admin
 
@@ -126,38 +100,38 @@ export class AdminDashboard {
     if (!s) return;
     if (challenger) {
       const courtId = s.challengerCourtId ?? s.courts[0]?.id;
-      this.sessions.setMode(this.code, 'challenger', courtId);
+      this.store.setMode({ code: this.code, mode: 'challenger', challengerCourtId: courtId });
     } else {
-      this.sessions.setMode(this.code, 'standard');
+      this.store.setMode({ code: this.code, mode: 'standard' });
     }
   }
 
   setChallengerCourt(courtId: string): void {
-    this.sessions.setMode(this.code, 'challenger', courtId);
+    this.store.setMode({ code: this.code, mode: 'challenger', challengerCourtId: courtId });
   }
 
   addCourt(): void {
-    this.sessions.addCourt(this.code);
+    this.store.addCourt({ code: this.code });
   }
 
   removeCourt(court: Court): void {
-    this.sessions.removeCourt(this.code, court.id);
+    this.store.removeCourt({ code: this.code, courtId: court.id });
   }
 
   remove(id: PlayerId): void {
-    this.sessions.removePlayer(this.code, id);
+    this.store.removePlayer({ code: this.code, id });
   }
 
   selfRest(): void {
-    this.sessions.rest(this.code);
+    this.store.rest({ code: this.code });
   }
 
   selfBack(): void {
-    this.sessions.activate(this.code);
+    this.store.activate({ code: this.code });
   }
 
   backIn(id: PlayerId): void {
-    this.sessions.activate(this.code, id);
+    this.store.activate({ code: this.code, id });
   }
 
   joinAsPlayer(): void {
@@ -165,7 +139,7 @@ export class AdminDashboard {
       .open<NameDialog, void, string>(NameDialog)
       .afterClosed()
       .subscribe((name) => {
-        if (name) this.sessions.join(this.code, name);
+        if (name) this.store.join({ code: this.code, name });
       });
   }
 
@@ -190,14 +164,14 @@ export class AdminDashboard {
 
   endSession(): void {
     if (confirm('End this session for everyone?')) {
-      this.sessions.endSession(this.code);
+      this.store.endSession({ code: this.code });
     }
   }
 
   drop(event: CdkDragDrop<unknown>): void {
     const ids = this.queue().map((q) => q.id);
     moveItemInArray(ids, event.previousIndex, event.currentIndex);
-    this.sessions.reorderQueue(this.code, ids);
+    this.store.reorderQueue({ code: this.code, newQueue: ids });
   }
 
   finishGame(court: Court): void {
@@ -217,16 +191,20 @@ export class AdminDashboard {
         if (!result) return;
         if (isChallengerCourt) {
           if (result.winningPairIds?.length === 2) {
-            this.sessions.finishChallengerGame(
-              this.code,
-              court.id,
-              result.winningPairIds,
-            );
+            this.store.finishChallengerGame({
+              code: this.code,
+              courtId: court.id,
+              winningPairIds: result.winningPairIds,
+            });
           }
         } else {
-          this.sessions.finishStandardGame(this.code, court.id, {
-            winningPairIds: result.winningPairIds,
-            promote: result.promote,
+          this.store.finishStandardGame({
+            code: this.code,
+            courtId: court.id,
+            opts: {
+              winningPairIds: result.winningPairIds,
+              promote: result.promote,
+            },
           });
         }
       });

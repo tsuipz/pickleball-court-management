@@ -1,4 +1,4 @@
-import { DestroyRef, signal } from '@angular/core';
+import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { vi } from 'vitest';
@@ -46,8 +46,6 @@ vi.mock('firebase/firestore', () => {
       }),
   };
 });
-
-const NOOP_DESTROY = { onDestroy: () => {} } as unknown as DestroyRef;
 
 function setup(uid: string | null = 'admin') {
   h.store = {};
@@ -99,18 +97,29 @@ describe('SessionService.createSession', () => {
   });
 });
 
-describe('SessionService.watch', () => {
-  it('emits the current session state via a signal', () => {
+describe('SessionService.listen', () => {
+  it('hands the current session state to the callback', () => {
     const { svc } = setup('admin');
     seed('ABCDE');
-    const state = svc.watch('ABCDE', NOOP_DESTROY);
-    expect(state()?.code).toBe('ABCDE');
+    const got: { value: SessionState | null } = { value: null };
+    const unsub = svc.listen(
+      'ABCDE',
+      (s) => (got.value = s),
+      () => {},
+    );
+    expect(got.value?.code).toBe('ABCDE');
+    unsub();
   });
 
-  it('emits null for a missing session', () => {
+  it('hands null to the callback for a missing session', () => {
     const { svc } = setup('admin');
-    const state = svc.watch('NOPE1', NOOP_DESTROY);
-    expect(state()).toBeNull();
+    const got: { value: SessionState | null } = { value: {} as SessionState };
+    svc.listen(
+      'NOPE1',
+      (s) => (got.value = s),
+      () => {},
+    );
+    expect(got.value).toBeNull();
   });
 });
 
@@ -144,12 +153,9 @@ describe('SessionService gameplay mutations', () => {
     expect(h.store['ABCDE'].queue).toContain('p1');
   });
 
-  it('reports a friendly error when the session is missing', async () => {
+  it('rejects when the session is missing (the store surfaces the error)', async () => {
     const { svc } = setup('admin');
-    const snack = TestBed.inject(MatSnackBar);
-    const spy = vi.spyOn(snack, 'open');
-    await svc.addCourt('GHOST'); // no such doc → mutate throws → reported
-    expect(spy).toHaveBeenCalled();
+    await expect(svc.addCourt('GHOST')).rejects.toThrow('Session not found.');
   });
 });
 

@@ -1,12 +1,4 @@
-import {
-  DestroyRef,
-  Injectable,
-  Injector,
-  Signal,
-  effect,
-  inject,
-  signal,
-} from '@angular/core';
+import { Injectable, Injector, effect, inject } from '@angular/core';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import {
   DocumentReference,
@@ -33,7 +25,12 @@ const adminKey = (code: string) => `dink:admin:${code.toUpperCase()}`;
  * The whole session lives in one document (`sessions/{code}`) so that every
  * rotation is an atomic transaction and a single `onSnapshot` listener drives
  * the live UI. All gameplay mutations funnel through `mutate()`, which applies
- * a pure rotation function inside a transaction and surfaces failures.
+ * a pure rotation function inside a transaction.
+ *
+ * This is a thin Firebase data layer: it does not hold the live state or surface
+ * gameplay errors itself. `listen()` hands snapshots to a callback and `mutate()`
+ * rethrows on failure — the {@link SessionStore} owns the live signal, the
+ * per-action pending/error state, and the user-facing messaging.
  */
 @Injectable({ providedIn: 'root' })
 export class SessionService {
@@ -83,40 +80,49 @@ export class SessionService {
   }
 
   /**
-   * Live view of a session. Returns a signal that updates on every Firestore
-   * change; the listener is torn down when the calling context is destroyed.
+   * Low-level live listener for a session document. Calls `onState` with each
+   * Firestore snapshot (null if the doc is absent) and `onError` if the stream
+   * errors. Returns an unsubscribe function — the caller (the
+   * {@link SessionStore}) owns teardown and any reconnect policy.
+   *
+   * Firestore reads require an auth token, and `onSnapshot` does NOT recover
+   * from an initial permission error — so the listener is held until anonymous
+   * sign-in has landed (keeps first paint instant without a permission error).
    */
-  watch(code: string, destroyRef: DestroyRef): Signal<SessionState | null> {
-    const state = signal<SessionState | null>(null);
+  listen(
+    code: string,
+    onState: (s: SessionState | null) => void,
+    onError: (err: unknown) => void,
+  ): () => void {
     const ref = this.ref(code);
     let unsub: (() => void) | null = null;
+    let pending: { destroy: () => void } | null = null;
 
     const attach = () => {
       if (unsub) return;
       unsub = onSnapshot(
         ref,
         (snap) =>
-          state.set(snap.exists() ? (snap.data() as SessionState) : null),
-        (err) => console.error('Session listener error', err),
+          onState(snap.exists() ? (snap.data() as SessionState) : null),
+        (err) => onError(err),
       );
     };
 
-    // Firestore reads require an auth token, and onSnapshot does NOT recover
-    // from an initial permission error — so wait until anonymous sign-in has
-    // landed before attaching the listener (keeps first paint instant).
     if (this.fb.uid()) {
       attach();
     } else {
-      const ref2 = effect(
+      pending = effect(
         () => {
           if (this.fb.uid()) attach();
         },
         { injector: this.injector },
       );
-      destroyRef.onDestroy(() => ref2.destroy());
     }
-    destroyRef.onDestroy(() => unsub?.());
-    return state;
+
+    return () => {
+      pending?.destroy();
+      unsub?.();
+    };
   }
 
   /** Whether the current device's uid owns the given session. */
@@ -173,37 +179,27 @@ export class SessionService {
   /**
    * Apply a pure rotation function to the session inside a Firestore
    * transaction (read current doc → transform → write whole doc back), so
-   * concurrent admin/player edits can't clobber each other. Failures are
-   * surfaced to the user via a snackbar rather than thrown.
+   * concurrent admin/player edits can't clobber each other. Rejects on failure;
+   * the {@link SessionStore} catches it to drive per-action error state.
    */
   private async mutate(
     code: string,
     apply: (s: SessionState) => SessionState,
-    failureMessage = 'Something went wrong — please try again.',
   ): Promise<void> {
     const ref = this.ref(code);
-    try {
-      await runTransaction(this.fb.db, async (tx) => {
-        const snap = await tx.get(ref);
-        if (!snap.exists()) throw new Error('Session not found.');
-        tx.set(ref, apply(snap.data() as SessionState));
-      });
-    } catch (err) {
-      this.report(err, failureMessage);
-    }
+    await runTransaction(this.fb.db, async (tx) => {
+      const snap = await tx.get(ref);
+      if (!snap.exists()) throw new Error('Session not found.');
+      tx.set(ref, apply(snap.data() as SessionState));
+    });
   }
 
   /** Join (or rename) the current player into the session's queue. */
   join(code: string, name: string): Promise<void> {
     const uid = this.fb.uid();
-    if (!uid) {
-      this.report(null, 'Not connected yet — try again in a moment.');
-      return Promise.resolve();
-    }
-    return this.mutate(
-      code,
-      (s) => rotation.addPlayer(s, uid, name.trim(), Date.now()),
-      'Could not join the session.',
+    if (!uid) return Promise.reject(new Error('Not connected yet.'));
+    return this.mutate(code, (s) =>
+      rotation.addPlayer(s, uid, name.trim(), Date.now()),
     );
   }
 

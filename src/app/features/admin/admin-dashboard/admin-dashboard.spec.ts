@@ -12,17 +12,36 @@ import {
   setMode,
 } from '../../../core/services/rotation';
 import { SessionService } from '../../../core/services/session.service';
+import { SessionStore } from '../../../core/state/session-store';
 import { AdminDashboard } from './admin-dashboard';
 
-/** Recording stand-in for SessionService (no Firebase). */
+/** Flush microtasks + timers so the per-action pending guard settles. */
+const flush = () => new Promise<void>((r) => setTimeout(r, 0));
+
+/**
+ * Real-signal stand-in for the SessionService data layer (no Firebase). The
+ * route-scoped SessionStore is the real thing; this feeds it a snapshot via
+ * `listen` and records the mutator calls the store forwards.
+ */
 class FakeSessions {
   readonly uid = signal<string | null>(null);
-  readonly state = signal<SessionState | null>(null);
+  private snapshot: SessionState | null = null;
   calls: unknown[][] = [];
   linkValue: string | null = 'https://x/session/TEST1/admin?t=tok';
 
-  watch() {
-    return this.state;
+  preset(s: SessionState | null) {
+    this.snapshot = s;
+  }
+  listen(
+    _code: string,
+    onState: (s: SessionState | null) => void,
+    _onError: (e: unknown) => void,
+  ) {
+    onState(this.snapshot);
+    return () => {};
+  }
+  isAdmin(s: SessionState | null) {
+    return !!s && s.adminUid === this.uid();
   }
   storedAdminToken() {
     return 'tok';
@@ -30,10 +49,13 @@ class FakeSessions {
   adminLink() {
     return this.linkValue;
   }
+
   private rec =
     (name: string) =>
-    (...args: unknown[]) =>
+    (...args: unknown[]) => {
       this.calls.push([name, ...args]);
+      return Promise.resolve();
+    };
 
   setMode = this.rec('setMode');
   addCourt = this.rec('addCourt');
@@ -69,10 +91,11 @@ let dialogResult: unknown;
 
 function makeAdmin(state: SessionState | null, uid = 'admin') {
   const fake = new FakeSessions();
-  fake.state.set(state);
+  fake.preset(state);
   fake.uid.set(uid);
   TestBed.configureTestingModule({
     providers: [
+      SessionStore,
       { provide: SessionService, useValue: fake },
       {
         provide: ActivatedRoute,
@@ -107,8 +130,8 @@ describe('AdminDashboard computeds', () => {
   it('lists waiting players with their names', () => {
     const { cmp } = makeAdmin(buildState(6));
     expect(cmp.queue()).toEqual([
-      { id: 'p5', name: 'Player 5' },
-      { id: 'p6', name: 'Player 6' },
+      { id: 'p5', name: 'Player 5', pos: 1, me: false },
+      { id: 'p6', name: 'Player 6', pos: 2, me: false },
     ]);
   });
 
@@ -122,7 +145,7 @@ describe('AdminDashboard computeds', () => {
     s = setMode(s, 'challenger', 'court-1');
     s = finishStandardGame(s, 'court-2', { winningPairIds: ['p5', 'p6'], promote: true });
     const { cmp } = makeAdmin(s);
-    expect(cmp.challengerPairs()).toEqual([{ names: 'Player 5 & Player 6' }]);
+    expect(cmp.challengerPairs()).toEqual([{ names: 'Player 5 & Player 6', me: false }]);
   });
 
   it('exposes me / myResting / benched for the organizer', () => {
@@ -142,13 +165,14 @@ describe('AdminDashboard computeds', () => {
 });
 
 describe('AdminDashboard actions', () => {
-  it('toggleMode(true) designates a challenger court; (false) reverts', () => {
+  it('toggleMode(true) designates a challenger court; (false) reverts', async () => {
     const { cmp, fake } = makeAdmin(buildState(4));
     cmp.toggleMode(true);
     expect(fake.called('setMode')).toEqual(['setMode', 'TEST1', 'challenger', 'court-1']);
     fake.calls = [];
+    await flush(); // let the first setMode settle so the same-action guard clears
     cmp.toggleMode(false);
-    expect(fake.called('setMode')).toEqual(['setMode', 'TEST1', 'standard']);
+    expect(fake.called('setMode')).toEqual(['setMode', 'TEST1', 'standard', undefined]);
   });
 
   it('setChallengerCourt / addCourt / removeCourt / remove forward to the service', () => {
@@ -170,7 +194,7 @@ describe('AdminDashboard actions', () => {
     cmp.backIn('p3');
     cmp.endSession(); // confirm() stubbed true
     expect(fake.called('rest')).toBeTruthy();
-    expect(fake.called('activate')).toEqual(['activate', 'TEST1']);
+    expect(fake.called('activate')).toEqual(['activate', 'TEST1', undefined]);
     expect(fake.calls.filter((c) => c[0] === 'activate').length).toBe(2); // selfBack + backIn
     expect(fake.called('endSession')).toBeTruthy();
   });

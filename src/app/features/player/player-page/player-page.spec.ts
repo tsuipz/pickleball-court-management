@@ -1,5 +1,6 @@
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { ActivatedRoute } from '@angular/router';
 import { SessionState } from '../../../core/models/types';
 import {
@@ -10,20 +11,40 @@ import {
   setMode,
 } from '../../../core/services/rotation';
 import { SessionService } from '../../../core/services/session.service';
+import { SessionStore } from '../../../core/state/session-store';
 import { PlayerPage } from './player-page';
 
-/** Minimal real-signal stand-in for SessionService (no Firestore). */
+/**
+ * Real-signal stand-in for the SessionService data layer (no Firestore). The
+ * route-scoped SessionStore is the real thing; this just feeds it a snapshot
+ * via `listen` and records the mutator calls the store forwards.
+ */
 class FakeSessions {
   readonly uid = signal<string | null>(null);
-  readonly state = signal<SessionState | null>(null);
+  private snapshot: SessionState | null = null;
   calls: unknown[][] = [];
-  watch() {
-    return this.state;
+
+  preset(s: SessionState | null) {
+    this.snapshot = s;
   }
+  listen(
+    _code: string,
+    onState: (s: SessionState | null) => void,
+    _onError: (e: unknown) => void,
+  ) {
+    onState(this.snapshot);
+    return () => {};
+  }
+  isAdmin(s: SessionState | null) {
+    return !!s && s.adminUid === this.uid();
+  }
+
   private rec =
     (name: string) =>
-    (...args: unknown[]) =>
+    (...args: unknown[]) => {
       this.calls.push([name, ...args]);
+      return Promise.resolve();
+    };
   join = this.rec('join');
   rest = this.rec('rest');
   activate = this.rec('activate');
@@ -53,11 +74,13 @@ function makeWithFake(
   uid: string | null,
 ): { page: PlayerPage; fake: FakeSessions } {
   const fake = new FakeSessions();
-  fake.state.set(state);
+  fake.preset(state);
   fake.uid.set(uid);
   TestBed.configureTestingModule({
     providers: [
+      SessionStore,
       { provide: SessionService, useValue: fake },
+      { provide: MatSnackBar, useValue: { open: () => {} } },
       {
         provide: ActivatedRoute,
         useValue: { snapshot: { paramMap: { get: () => 'TEST1' } } },
@@ -164,12 +187,12 @@ describe('PlayerPage actions', () => {
     expect(fake.called('join')).toBeUndefined();
   });
 
-  it('rest and back forward to the service', () => {
+  it('rest and back forward to the store (and on to the service)', () => {
     const { page, fake } = makeWithFake(buildState(4), 'p1');
     page.rest();
     page.back();
-    expect(fake.called('rest')).toEqual(['rest', 'TEST1']);
-    expect(fake.called('activate')).toEqual(['activate', 'TEST1']);
+    expect(fake.called('rest')).toEqual(['rest', 'TEST1', undefined]);
+    expect(fake.called('activate')).toEqual(['activate', 'TEST1', undefined]);
   });
 
   it('leave removes the player when confirmed', () => {
