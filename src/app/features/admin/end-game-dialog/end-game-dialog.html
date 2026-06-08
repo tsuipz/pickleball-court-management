@@ -3,49 +3,42 @@
 </h2>
 
 <mat-dialog-content>
-  @if (needsWinner() || data.mode === 'challenger') {
-    <p class="mt-0 font-semibold">
-      {{
-        data.isChallengerCourt
-          ? 'Who won? The winning pair stays on.'
-          : 'Select the winning pair (optional).'
-      }}
-    </p>
-    <div class="mb-4 flex flex-wrap gap-2">
-      @for (p of seats(); track p.id) {
-        <button
-          type="button"
-          (click)="toggle(p.id)"
-          class="chip inline-flex cursor-pointer items-center gap-[0.3rem] rounded-full border-2 border-ink bg-paper-2 px-[0.95rem] py-[0.45rem] text-[0.95rem] font-semibold text-ink transition-transform active:scale-95"
-          [class.sel]="selected().includes(p.id)"
-        >
-          @if (selected().includes(p.id)) {
-            <span>✓</span>
-          }
-          {{ p.name }}
-        </button>
-      }
-    </div>
-
-    @if (!data.isChallengerCourt) {
-      <mat-checkbox
-        [checked]="promote()"
-        [disabled]="selected().length !== 2"
-        (change)="promote.set($event.checked)"
+  <p class="mt-0 font-semibold">
+    {{
+      data.isChallengerCourt
+        ? 'Who won? The winning pair stays on.'
+        : 'Select the winning pair (optional — records the result).'
+    }}
+  </p>
+  <div class="mb-4 flex flex-wrap gap-2">
+    @for (p of seats(); track p.id) {
+      <button
+        type="button"
+        (click)="toggle(p.id)"
+        class="chip inline-flex cursor-pointer items-center gap-[0.3rem] rounded-full border-2 border-ink bg-paper-2 px-[0.95rem] py-[0.45rem] text-[0.95rem] font-semibold text-ink transition-transform active:scale-95"
+        [class.sel]="selected().includes(p.id)"
       >
-        Promote winning pair to the Challenger Queue
-      </mat-checkbox>
+        @if (selected().includes(p.id)) {
+          <span>✓</span>
+        }
+        {{ p.name }}
+      </button>
     }
+  </div>
 
-    @if (data.isChallengerCourt && selected().length !== 2) {
-      <p class="m-0 text-[0.85rem] font-semibold text-clay-deep">
-        Pick exactly two winners to continue.
-      </p>
-    }
-  } @else {
-    <p class="mt-0 font-semibold">
-      The four players will return to the back of the queue and the next
-      four will come on.
+  @if (data.mode === 'challenger' && !data.isChallengerCourt) {
+    <mat-checkbox
+      [checked]="promote()"
+      [disabled]="selected().length !== 2"
+      (change)="promote.set($event.checked)"
+    >
+      Promote winning pair to the Challenger Queue
+    </mat-checkbox>
+  }
+
+  @if (data.isChallengerCourt && selected().length !== 2) {
+    <p class="m-0 text-[0.85rem] font-semibold text-clay-deep">
+      Pick exactly two winners to continue.
     </p>
   }
 </mat-dialog-content>

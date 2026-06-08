@@ -1,4 +1,12 @@
-import { Component, computed, input, output } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  computed,
+  inject,
+  input,
+  output,
+  signal,
+} from '@angular/core';
 import { Court, Player, PlayerId } from '../../../core/models/types';
 
 interface SeatVm {
@@ -33,6 +41,24 @@ export class CourtCard {
   readonly finish = output<void>();
   /** Admin tapped "remove court". */
   readonly remove = output<void>();
+
+  /** Ticks once a second to drive the live game timer. */
+  private readonly now = signal(Date.now());
+
+  constructor() {
+    const id = setInterval(() => this.now.set(Date.now()), 1000);
+    inject(DestroyRef).onDestroy(() => clearInterval(id));
+  }
+
+  /** Elapsed game time as `M:SS`, or null when the court isn't mid-game. */
+  readonly elapsed = computed<string | null>(() => {
+    const c = this.court();
+    if (c.status !== 'in-progress' || c.startedAt == null) return null;
+    const secs = Math.max(0, Math.floor((this.now() - c.startedAt) / 1000));
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${String(s).padStart(2, '0')}`;
+  });
 
   readonly seats = computed<SeatVm[]>(() => {
     const c = this.court();

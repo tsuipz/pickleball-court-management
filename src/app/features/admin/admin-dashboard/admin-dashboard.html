@@ -49,6 +49,14 @@
 
       <div class="flex gap-[0.6rem]">
         <button
+          (click)="undo()"
+          [disabled]="!canUndo() || busy('undo')"
+          title="Undo the last action"
+          class="cursor-pointer rounded-full border-[2.5px] border-ink bg-paper px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-ink shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-40 disabled:shadow-none"
+        >
+          ↩ Undo
+        </button>
+        <button
           (click)="addCourt()"
           [disabled]="busy('addCourt')"
           class="cursor-pointer rounded-full border-[2.5px] border-ink bg-lime px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-ink shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50 disabled:shadow-none"
@@ -121,6 +129,9 @@
           <div cdkDrag class="row flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
             <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-court font-display text-[0.85rem] font-extrabold text-paper tabular-nums">{{ i + 1 }}</span>
             <span class="flex-1 font-semibold">{{ item.name }}</span>
+            @if (item.wins || item.losses) {
+              <span class="text-[0.72rem] font-bold tabular-nums text-ink-soft" title="Wins–Losses">{{ item.wins }}–{{ item.losses }}</span>
+            }
             <span cdkDragHandle title="Drag to reorder" class="cursor-grab text-[1.1rem] text-ink-soft">⠿</span>
             <button (click)="remove(item.id)" title="Remove" class="cursor-pointer rounded-md border-0 bg-transparent px-[0.4rem] py-[0.2rem] text-[0.95rem] text-clay-deep hover:bg-clay hover:text-paper">✕</button>
           </div>
@@ -136,11 +147,12 @@
           <span>🏆 Challenger queue</span>
           <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full border-2 border-ink bg-lime px-[0.4rem] text-[0.9rem] text-ink tabular-nums">{{ challengerPairs().length }}</span>
         </h3>
-        <div class="flex flex-col gap-[0.45rem]">
+        <div cdkDropList (cdkDropListDropped)="dropChallenger($event)" class="flex flex-col gap-[0.45rem]">
           @for (pair of challengerPairs(); track $index; let i = $index) {
-            <div class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
+            <div cdkDrag class="row flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
               <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-lime font-display text-[0.85rem] font-extrabold text-ink tabular-nums">{{ i + 1 }}</span>
               <span class="flex-1 font-semibold">{{ pair.names }}</span>
+              <span cdkDragHandle title="Drag to reorder" class="cursor-grab text-[1.1rem] text-ink-soft">⠿</span>
             </div>
           } @empty {
             <p class="my-[0.3rem] italic text-ink-soft">No challengers waiting.</p>
@@ -159,8 +171,28 @@
           @for (p of benched(); track p.id) {
             <div class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
               <span class="flex-1 font-semibold">{{ p.name }}</span>
+              @if (p.wins || p.losses) {
+                <span class="text-[0.72rem] font-bold tabular-nums text-ink-soft" title="Wins–Losses">{{ p.wins }}–{{ p.losses }}</span>
+              }
               <button (click)="backIn(p.id)" class="cursor-pointer rounded-full border-2 border-ink bg-lime px-[0.7rem] py-[0.25rem] font-display text-[0.8rem] font-extrabold text-ink">Back in</button>
               <button (click)="remove(p.id)" title="Remove" class="cursor-pointer rounded-md border-0 bg-transparent px-[0.4rem] py-[0.2rem] text-[0.95rem] text-clay-deep hover:bg-clay hover:text-paper">✕</button>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    @if (leaderboard().length) {
+      <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard">
+        <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+          <span>🏅 Leaderboard</span>
+        </h3>
+        <div class="flex flex-col gap-[0.45rem]">
+          @for (p of leaderboard(); track p.id; let i = $index) {
+            <div class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
+              <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-ink font-display text-[0.85rem] font-extrabold text-paper tabular-nums">{{ i + 1 }}</span>
+              <span class="flex-1 font-semibold">{{ p.name }}</span>
+              <span class="font-display text-[0.95rem] font-extrabold tabular-nums text-court-deep" title="Wins–Losses">{{ p.wins }}–{{ p.losses }}</span>
             </div>
           }
         </div>

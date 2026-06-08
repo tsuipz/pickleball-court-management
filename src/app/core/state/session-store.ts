@@ -11,7 +11,12 @@ import {
 } from '@ngrx/signals';
 import { rxMethod } from '@ngrx/signals/rxjs-interop';
 import { filter, from, mergeMap, pipe, tap } from 'rxjs';
-import { Player, PlayerId, SessionState } from '../models/types';
+import {
+  ChallengerPair,
+  Player,
+  PlayerId,
+  SessionState,
+} from '../models/types';
 import * as rotation from '../services/rotation';
 import { SessionService } from '../services/session.service';
 
@@ -87,6 +92,8 @@ export const SessionStore = signalStore(
         name: s.players[pid]?.name ?? '—',
         pos: i + 1,
         me: pid === id,
+        wins: s.players[pid]?.wins ?? 0,
+        losses: s.players[pid]?.losses ?? 0,
       }));
     }),
 
@@ -118,6 +125,22 @@ export const SessionStore = signalStore(
 
     /** Whether the current device owns (is admin of) this session. */
     isAdmin: computed(() => sessions.isAdmin(store.state())),
+
+    /** Whether there is a snapshot to single-step undo to. */
+    canUndo: computed(() => !!store.state()?.previous),
+
+    /** Players who have finished at least one game, ranked by wins (then fewest
+     *  losses) — drives the admin leaderboard. */
+    leaderboard: computed<Player[]>(() => {
+      const s = store.state();
+      if (!s) return [];
+      return Object.values(s.players)
+        .filter((p) => (p.wins ?? 0) + (p.losses ?? 0) > 0)
+        .sort(
+          (a, b) =>
+            (b.wins ?? 0) - (a.wins ?? 0) || (a.losses ?? 0) - (b.losses ?? 0),
+        );
+    }),
 
     /** The current player's own record, if they're playing. */
     me: computed<Player | null>(() => {
@@ -264,6 +287,7 @@ export const SessionStore = signalStore(
         run: (input: T) => Promise<void>,
         message: string,
         project?: (input: T, current: SessionState) => SessionState,
+        { recordUndo = true }: { recordUndo?: boolean } = {},
       ) =>
         rxMethod<T>(
           pipe(
@@ -275,6 +299,14 @@ export const SessionStore = signalStore(
               if (project && before) {
                 try {
                   projected = project(input, before);
+                  // Mirror the server's undo snapshotting in the optimistic echo
+                  // so the Undo control lights up immediately (the committed
+                  // snapshot reconciles to the same value).
+                  if (recordUndo) {
+                    const prev = structuredClone(before);
+                    prev.previous = null;
+                    projected = { ...projected, previous: prev };
+                  }
                   patchState(store, { state: projected });
                 } catch {
                   projected = null; // fall back to write-only; server is truth
@@ -421,11 +453,28 @@ export const SessionStore = signalStore(
           'Could not reorder the queue.',
           ({ newQueue }, s) => rotation.reorderQueue(s, newQueue),
         ),
+        reorderChallengerQueue: mutation<{
+          code: string;
+          newQueue: ChallengerPair[];
+        }>(
+          () => 'reorderChallengerQueue',
+          ({ code, newQueue }) =>
+            sessions.reorderChallengerQueue(code, newQueue),
+          'Could not reorder the challenger queue.',
+          ({ newQueue }, s) => rotation.reorderChallengerQueue(s, newQueue),
+        ),
         endSession: mutation<{ code: string }>(
           () => 'endSession',
           ({ code }) => sessions.endSession(code),
           'Could not end the session.',
           (_input, s) => rotation.endSession(s),
+        ),
+        undo: mutation<{ code: string }>(
+          () => 'undo',
+          ({ code }) => sessions.undo(code),
+          'Nothing to undo.',
+          (_input, s) => rotation.undo(s),
+          { recordUndo: false },
         ),
       };
     },

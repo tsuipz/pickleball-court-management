@@ -44,8 +44,9 @@ function takePair(s: SessionState): PlayerId[] | null {
   return null;
 }
 
-/** Seat waiting players onto any empty standard court (groups of 4). */
-function fillStandardCourts(s: SessionState): void {
+/** Seat waiting players onto any empty standard court (groups of 4). A court
+ *  that gets seated starts a new game, so its timer is stamped with `now`. */
+function fillStandardCourts(s: SessionState, now: number): void {
   for (const court of s.courts) {
     if (court.id === s.challengerCourtId) continue;
     if (
@@ -55,14 +56,19 @@ function fillStandardCourts(s: SessionState): void {
     ) {
       court.playerIds = s.queue.splice(0, PLAYERS_PER_COURT);
       court.status = 'in-progress';
+      court.startedAt = now;
     }
   }
 }
 
-/** Ensure the challenger court has an incumbent pair + a challenger pair. */
-function fillChallengerCourt(s: SessionState): void {
+/** Ensure the challenger court has an incumbent pair + a challenger pair. The
+ *  game timer is (re)stamped only on the transition into a full court, so a
+ *  game already underway keeps its original start time across re-settles. */
+function fillChallengerCourt(s: SessionState, now: number): void {
   const court = challengerCourt(s);
   if (!court) return;
+
+  const wasInProgress = court.status === 'in-progress';
 
   let incumbent = court.incumbentPairIds ?? [];
   if (incumbent.length < PAIR) {
@@ -80,17 +86,36 @@ function fillChallengerCourt(s: SessionState): void {
 
   court.incumbentPairIds = incumbent.length === PAIR ? incumbent : null;
   court.playerIds = [...incumbent, ...challenger];
-  court.status =
-    court.playerIds.length === PLAYERS_PER_COURT ? 'in-progress' : 'idle';
+  const full = court.playerIds.length === PLAYERS_PER_COURT;
+  court.status = full ? 'in-progress' : 'idle';
+  if (full && !wasInProgress) court.startedAt = now;
+  if (!full) court.startedAt = null;
 }
 
 /** Re-seat courts after any change. No-op once the session has ended.
  *  The challenger court is filled FIRST so it gets priority on the next pair
- *  before standard courts consume the queue. */
-function settle(s: SessionState): void {
+ *  before standard courts consume the queue. `now` stamps the timer on any
+ *  court that starts a fresh game. */
+function settle(s: SessionState, now: number): void {
   if (s.status === 'ended') return;
-  if (s.challengerCourtId) fillChallengerCourt(s);
-  fillStandardCourts(s);
+  if (s.challengerCourtId) fillChallengerCourt(s, now);
+  fillStandardCourts(s, now);
+}
+
+/** Record a finished game's result onto the players' win/loss tallies. */
+function recordResult(
+  s: SessionState,
+  winnerIds: PlayerId[],
+  loserIds: PlayerId[],
+): void {
+  for (const id of winnerIds) {
+    const p = s.players[id];
+    if (p) p.wins = (p.wins ?? 0) + 1;
+  }
+  for (const id of loserIds) {
+    const p = s.players[id];
+    if (p) p.losses = (p.losses ?? 0) + 1;
+  }
 }
 
 // --- Construction ---------------------------------------------------------
@@ -119,6 +144,7 @@ export function createInitialSessionState(args: {
       status: 'idle',
       playerIds: [],
       incumbentPairIds: null,
+      startedAt: null,
     });
   }
   const s: SessionState = {
@@ -134,6 +160,7 @@ export function createInitialSessionState(args: {
     queue: [],
     challengerQueue: [],
     createdAt: args.createdAt,
+    previous: null,
   };
   const adminName = args.adminName?.trim();
   if (adminName) {
@@ -141,9 +168,11 @@ export function createInitialSessionState(args: {
       id: args.adminUid,
       name: adminName,
       joinedAt: args.createdAt,
+      wins: 0,
+      losses: 0,
     };
     s.queue.push(args.adminUid);
-    settle(s);
+    settle(s, args.createdAt);
   }
   return s;
 }
@@ -163,13 +192,14 @@ export function addPlayer(
 ): SessionState {
   const s = clone(state);
   if (s.players[id]) {
-    // Returning player: just refresh the display name, keep their spot.
+    // Returning player: just refresh the display name, keep their spot (and
+    // their win/loss tally).
     s.players[id].name = name;
   } else {
-    s.players[id] = { id, name, joinedAt: now };
+    s.players[id] = { id, name, joinedAt: now, wins: 0, losses: 0 };
     s.queue.push(id);
   }
-  settle(s);
+  settle(s, now);
   return s;
 }
 
@@ -198,37 +228,52 @@ function pullFromRotation(s: SessionState, id: PlayerId): void {
         court.incumbentPairIds = court.incumbentPairIds.filter((p) => p !== id);
         if (court.incumbentPairIds.length === 0) court.incumbentPairIds = null;
       }
-      if (court.playerIds.length === 0) court.status = 'idle';
+      if (court.playerIds.length === 0) {
+        court.status = 'idle';
+        court.startedAt = null;
+      }
     }
   }
 }
 
 /** Remove a player from the session entirely. */
-export function removePlayer(state: SessionState, id: PlayerId): SessionState {
+export function removePlayer(
+  state: SessionState,
+  id: PlayerId,
+  now: number = Date.now(),
+): SessionState {
   const s = clone(state);
   pullFromRotation(s, id);
   delete s.players[id];
-  settle(s);
+  settle(s, now);
   return s;
 }
 
 /** Sit a player out — they stay in the session (on the bench) but leave
  *  rotation until they come back. */
-export function restPlayer(state: SessionState, id: PlayerId): SessionState {
+export function restPlayer(
+  state: SessionState,
+  id: PlayerId,
+  now: number = Date.now(),
+): SessionState {
   const s = clone(state);
   if (!s.players[id]) return s;
   pullFromRotation(s, id);
-  settle(s);
+  settle(s, now);
   return s;
 }
 
 /** Bring a benched player back into rotation (to the back of the queue). */
-export function activatePlayer(state: SessionState, id: PlayerId): SessionState {
+export function activatePlayer(
+  state: SessionState,
+  id: PlayerId,
+  now: number = Date.now(),
+): SessionState {
   const s = clone(state);
   if (!s.players[id]) return s;
   if (locatePlayer(s, id).kind === 'idle') {
     s.queue.push(id);
-    settle(s);
+    settle(s, now);
   }
   return s;
 }
@@ -244,7 +289,10 @@ export function benchedPlayers(s: SessionState): Player[] {
 
 /** Add a new idle standard court (numbered after the highest existing one),
  *  then seat waiting players if enough are queued. */
-export function addCourt(state: SessionState): SessionState {
+export function addCourt(
+  state: SessionState,
+  now: number = Date.now(),
+): SessionState {
   const s = clone(state);
   const maxNumber = s.courts.reduce((m, c) => Math.max(m, c.number), 0);
   const number = maxNumber + 1;
@@ -255,15 +303,20 @@ export function addCourt(state: SessionState): SessionState {
     status: 'idle',
     playerIds: [],
     incumbentPairIds: null,
+    startedAt: null,
   });
-  settle(s);
+  settle(s, now);
   return s;
 }
 
 /** Remove a court, returning its players to the queue. Removing the challenger
  *  court also reverts the session to standard mode and flushes the challenger
  *  queue back into the standard queue. */
-export function removeCourt(state: SessionState, courtId: string): SessionState {
+export function removeCourt(
+  state: SessionState,
+  courtId: string,
+  now: number = Date.now(),
+): SessionState {
   const s = clone(state);
   const court = s.courts.find((c) => c.id === courtId);
   if (!court) return s;
@@ -278,7 +331,7 @@ export function removeCourt(state: SessionState, courtId: string): SessionState 
   }
 
   s.courts = s.courts.filter((c) => c.id !== courtId);
-  settle(s);
+  settle(s, now);
   return s;
 }
 
@@ -296,6 +349,7 @@ export function setMode(
   state: SessionState,
   mode: SessionMode,
   challengerCourtId?: string,
+  now: number = Date.now(),
 ): SessionState {
   const s = clone(state);
 
@@ -309,7 +363,7 @@ export function setMode(
     s.challengerQueue = [];
     s.challengerCourtId = null;
     s.mode = 'standard';
-    settle(s);
+    settle(s, now);
     return s;
   }
 
@@ -341,7 +395,7 @@ export function setMode(
       target.incumbentPairIds = null;
     }
   }
-  settle(s);
+  settle(s, now);
   return s;
 }
 
@@ -359,6 +413,7 @@ export function finishStandardGame(
   state: SessionState,
   courtId: string,
   opts: StandardFinishOptions = {},
+  now: number = Date.now(),
 ): SessionState {
   const s = clone(state);
   const court = s.courts.find((c) => c.id === courtId);
@@ -367,21 +422,27 @@ export function finishStandardGame(
   const onCourt = [...court.playerIds];
   court.playerIds = [];
   court.status = 'idle';
+  court.startedAt = null;
 
   const winners = opts.winningPairIds ?? [];
-  if (
-    s.mode === 'challenger' &&
-    opts.promote &&
-    winners.length === PAIR &&
-    winners.every((id) => onCourt.includes(id))
-  ) {
+  const hasWinner =
+    winners.length === PAIR && winners.every((id) => onCourt.includes(id));
+
+  // Record the win/loss tally whenever a valid winning pair was named —
+  // independent of promotion, so plain standard games also count.
+  if (hasWinner) {
+    const losers = onCourt.filter((id) => !winners.includes(id));
+    recordResult(s, winners, losers);
+  }
+
+  if (s.mode === 'challenger' && opts.promote && hasWinner) {
     const losers = onCourt.filter((id) => !winners.includes(id));
     s.challengerQueue.push({ playerIds: winners });
     s.queue.push(...losers);
   } else {
     s.queue.push(...onCourt);
   }
-  settle(s);
+  settle(s, now);
   return s;
 }
 
@@ -390,6 +451,7 @@ export function finishChallengerGame(
   state: SessionState,
   courtId: string,
   winningPairIds: PlayerId[],
+  now: number = Date.now(),
 ): SessionState {
   const s = clone(state);
   const court = s.courts.find((c) => c.id === courtId);
@@ -400,12 +462,14 @@ export function finishChallengerGame(
   if (winners.length !== PAIR) return s; // invalid selection — no-op
 
   const losers = onCourt.filter((id) => !winners.includes(id));
+  recordResult(s, winners, losers);
   s.queue.push(...losers); // losers go to the BACK of the standard queue
 
   court.incumbentPairIds = winners; // winners stay
   court.playerIds = [...winners];
   court.status = 'idle';
-  settle(s); // pulls the next challenger pair onto the court
+  court.startedAt = null;
+  settle(s, now); // pulls the next challenger pair onto the court
   return s;
 }
 
@@ -427,6 +491,47 @@ export function reorderQueue(
   const missing = s.queue.filter((id) => !valid.includes(id));
   s.queue = [...valid, ...missing];
   return s;
+}
+
+/** Stable identity for a challenger pair, order-independent. */
+function pairKey(p: ChallengerPair): string {
+  return [...p.playerIds].sort().join('|');
+}
+
+/** Admin-driven manual reorder of the challenger queue. Pairs are matched to
+ *  the existing queue by their (order-independent) membership; any pair the
+ *  caller dropped is preserved at the back. */
+export function reorderChallengerQueue(
+  state: SessionState,
+  newQueue: ChallengerPair[],
+): SessionState {
+  const s = clone(state);
+  const existing = new Map(s.challengerQueue.map((p) => [pairKey(p), p]));
+  const used = new Set<string>();
+  const result: ChallengerPair[] = [];
+  for (const p of newQueue) {
+    const k = pairKey(p);
+    const found = existing.get(k);
+    if (found && !used.has(k)) {
+      result.push(found);
+      used.add(k);
+    }
+  }
+  for (const p of s.challengerQueue) {
+    if (!used.has(pairKey(p))) result.push(p);
+  }
+  s.challengerQueue = result;
+  return s;
+}
+
+/** Revert to the snapshot taken before the last undoable write (single step).
+ *  The restored state's own `previous` is cleared, so there is nothing further
+ *  to undo. A no-op (returns a clone) when there is no snapshot. */
+export function undo(state: SessionState): SessionState {
+  if (!state.previous) return clone(state);
+  const restored = clone(state.previous);
+  restored.previous = null;
+  return restored;
 }
 
 // --- Queries --------------------------------------------------------------

@@ -34,8 +34,16 @@
         {{ live ? 'In play' : 'Open' }}
       </span>
     </div>
+    @if (elapsed(); as t) {
+      <span
+        class="ml-auto inline-flex items-center gap-[0.3rem] rounded-full border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.2rem] font-display text-[0.95rem] font-extrabold tabular-nums text-ink"
+        title="Game time"
+      >
+        ⏱ {{ t }}
+      </span>
+    }
     @if (ch) {
-      <span class="ml-auto text-[1.3rem]" title="Winner stays">🏆</span>
+      <span class="text-[1.3rem]" [class.ml-auto]="!elapsed()" title="Winner stays">🏆</span>
     }
   </div>
 
@@ -57,6 +65,10 @@
                 [class.you-here]="seat.you"
               >
                 {{ seat.name }}
+                @let pl = players()[seat.id];
+                @if (pl && (pl.wins || pl.losses)) {
+                  <i class="not-italic text-[0.68rem] font-bold tabular-nums text-ink-soft" title="Wins–Losses">{{ pl.wins }}–{{ pl.losses }}</i>
+                }
                 @if (seat.incumbent) {
                   <i class="not-italic text-clay-deep" title="Staying — won last game">★</i>
                 }
