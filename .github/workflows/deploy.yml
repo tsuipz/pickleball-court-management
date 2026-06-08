@@ -1,47 +1,26 @@
-name: CI/CD
+name: Deploy
 
+# Runs only after the CI workflow finishes on main — so we never deploy a
+# commit that failed build/test, even without branch protection.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
-  pull_request:
 
-# Allow one concurrent deployment per ref; cancel superseded runs.
 concurrency:
-  group: ci-cd-${{ github.ref }}
+  group: deploy
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: Build & test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24' # Angular 22 needs Node >= 24.15
-          cache: npm
-
-      - run: npm ci
-
-      # environment.ts is git-ignored; a placeholder is enough to compile/test
-      # (the unit tests don't touch Firebase).
-      - name: Provide placeholder Firebase config
-        run: cp src/environments/environment.example.ts src/environments/environment.ts
-
-      - name: Build
-        run: npm run build
-
-      - name: Unit tests
-        run: npx ng test --watch=false
-
   deploy:
     name: Deploy to Firebase Hosting
-    needs: verify
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - uses: actions/setup-node@v4
         with:

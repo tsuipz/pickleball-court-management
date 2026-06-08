@@ -121,11 +121,14 @@ npx firebase deploy --only hosting             # manual one-off deploy
 
 ## Continuous deployment (GitHub Actions)
 
-`.github/workflows/ci-cd.yml` runs on every push and PR:
+Two workflows:
 
-- **verify** — `npm ci`, build, and unit tests (on all pushes + PRs).
-- **deploy** — on push to `main` only, builds with the real Firebase config and
-  deploys to **Firebase Hosting** (`live` channel).
+- **`.github/workflows/ci.yml`** — `npm ci`, build, and unit tests on every
+  push and PR.
+- **`.github/workflows/deploy.yml`** — triggered via `workflow_run` after CI
+  succeeds on `main`; builds with the real Firebase config and deploys to
+  **Firebase Hosting** (`live` channel). It won't run if CI failed, so a broken
+  commit never deploys.
 
 ### One-time setup on the GitHub repo
 
