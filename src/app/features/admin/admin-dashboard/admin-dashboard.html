@@ -1,4 +1,12 @@
 @let s = state();
+@if (error(); as err) {
+  <div
+    role="alert"
+    class="fixed inset-x-3 top-3 z-50 mx-auto max-w-[640px] rounded-xl border-[2.5px] border-ink bg-clay px-4 py-[0.7rem] text-center font-semibold text-paper shadow-hard"
+  >
+    {{ err }}
+  </div>
+}
 @if (s === null) {
   <div class="flex items-center justify-center gap-3 px-4 py-16 font-semibold text-ink-soft">
     <span class="ball" style="--s: 2.5rem"></span> Loading…
@@ -42,13 +50,14 @@
       <div class="flex gap-[0.6rem]">
         <button
           (click)="addCourt()"
-          class="cursor-pointer rounded-full border-[2.5px] border-ink bg-lime px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-ink shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
+          [disabled]="busy('addCourt')"
+          class="cursor-pointer rounded-full border-[2.5px] border-ink bg-lime px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-ink shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50 disabled:shadow-none"
         >
           ＋ Court
         </button>
         <button
           (click)="endSession()"
-          [disabled]="s.status === 'ended'"
+          [disabled]="s.status === 'ended' || busy('endSession')"
           class="cursor-pointer rounded-full border-[2.5px] border-ink bg-paper px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-clay-deep shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50 disabled:shadow-none"
         >
           End

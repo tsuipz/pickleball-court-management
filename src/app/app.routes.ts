@@ -1,4 +1,5 @@
 import { Routes } from '@angular/router';
+import { SessionStore } from './core/state/session-store';
 
 export const routes: Routes = [
   {
@@ -12,6 +13,7 @@ export const routes: Routes = [
   {
     path: 'session/:code/admin',
     title: 'Pickleball — Admin',
+    providers: [SessionStore],
     loadComponent: () =>
       import('./features/admin/admin-dashboard/admin-dashboard').then(
         (m) => m.AdminDashboard,
@@ -20,6 +22,7 @@ export const routes: Routes = [
   {
     path: 'session/:code',
     title: 'Pickleball — Join',
+    providers: [SessionStore],
     loadComponent: () =>
       import('./features/player/player-page/player-page').then(
         (m) => m.PlayerPage,

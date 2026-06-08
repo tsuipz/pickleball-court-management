@@ -1,25 +1,20 @@
-import {
-  Component,
-  DestroyRef,
-  computed,
-  inject,
-  signal,
-} from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
-import { benchedPlayers, locatePlayer } from '../../../core/services/rotation';
-import { SessionService } from '../../../core/services/session.service';
+import { SessionStore } from '../../../core/state/session-store';
 import { CourtCard } from '../../admin/court-card/court-card';
-
-type StatusKind = 'court' | 'queue' | 'challenger' | 'idle' | 'loading';
 
 /**
  * Player view (route `/session/:code`, the shareable link). Prompts for a name
- * to join, then becomes a live, glanceable dashboard: the player's own status
- * ({@link status}), who's on each court, and the queues — all read-only except
- * for take-a-break / I'm-back / leave. Reused by anyone who isn't the admin.
+ * to join, then becomes a live, glanceable dashboard: the player's own status,
+ * who's on each court, and the queues — all read-only except for
+ * take-a-break / I'm-back / leave. Reused by anyone who isn't the admin.
+ *
+ * All live state and gameplay actions come from the route-scoped
+ * {@link SessionStore}; this component just connects it to the route's code and
+ * binds the shared selectors to the template.
  */
 @Component({
   selector: 'app-player-page',
@@ -28,128 +23,55 @@ type StatusKind = 'court' | 'queue' | 'challenger' | 'idle' | 'loading';
   styleUrl: './player-page.scss',
 })
 export class PlayerPage {
-  private readonly sessions = inject(SessionService);
+  private readonly store = inject(SessionStore);
   private readonly route = inject(ActivatedRoute);
 
   readonly code = (
     this.route.snapshot.paramMap.get('code') ?? ''
   ).toUpperCase();
 
-  readonly state = this.sessions.watch(this.code, inject(DestroyRef));
   readonly name = signal('');
 
-  /** The current player's uid (for highlighting "you" everywhere). */
-  readonly uid = this.sessions.uid;
+  // Shared, store-owned state + selectors.
+  readonly state = this.store.state;
+  readonly conn = this.store.conn;
+  readonly error = this.store.error;
+  readonly busy = this.store.busy;
+  readonly uid = this.store.uid;
+  readonly myName = this.store.myName;
+  readonly queue = this.store.queue;
+  readonly challengerPairs = this.store.challengerPairs;
+  readonly benched = this.store.benched;
+  readonly joined = this.store.joined;
+  readonly status = this.store.status;
 
-  readonly myName = computed(() => {
-    const s = this.state();
-    const id = this.sessions.uid();
-    return s && id ? (s.players[id]?.name ?? null) : null;
-  });
-
-  readonly queue = computed(() => {
-    const s = this.state();
-    const id = this.sessions.uid();
-    if (!s) return [];
-    return s.queue.map((pid, i) => ({
-      id: pid,
-      name: s.players[pid]?.name ?? '—',
-      pos: i + 1,
-      me: pid === id,
-    }));
-  });
-
-  readonly challengerPairs = computed(() => {
-    const s = this.state();
-    const id = this.sessions.uid();
-    if (!s) return [];
-    return s.challengerQueue.map((pair) => ({
-      names: pair.playerIds.map((pid) => s.players[pid]?.name ?? '—').join(' & '),
-      me: !!id && pair.playerIds.includes(id),
-    }));
-  });
-
-  readonly benched = computed(() => {
-    const s = this.state();
-    return s ? benchedPlayers(s) : [];
-  });
-
-  readonly joined = computed(() => {
-    const s = this.state();
-    const uid = this.sessions.uid();
-    return !!s && !!uid && !!s.players[uid];
-  });
-
-  /** Big, glanceable description of where this player is right now. */
-  readonly status = computed<{
-    kind: StatusKind;
-    label: string;
-    big: string;
-    detail: string;
-  }>(() => {
-    const s = this.state();
-    const uid = this.sessions.uid();
-    if (!s || !uid)
-      return { kind: 'loading', label: '', big: '…', detail: '' };
-    const loc = locatePlayer(s, uid);
-    switch (loc.kind) {
-      case 'court':
-        return {
-          kind: 'court',
-          label: "You're on",
-          big: `Court ${loc.court.number}`,
-          detail: 'Game on — have fun out there!',
-        };
-      case 'queue':
-        return {
-          kind: 'queue',
-          label: loc.position === 1 ? "You're up next" : "You're in line",
-          big: `#${loc.position}`,
-          detail:
-            loc.position === 1
-              ? 'Head to the next open court'
-              : `${loc.total} in the queue`,
-        };
-      case 'challenger-queue':
-        return {
-          kind: 'challenger',
-          label: '🏆 Challenger queue',
-          big: `#${loc.position}`,
-          detail: 'Win and stay on the throne',
-        };
-      default:
-        return {
-          kind: 'idle',
-          label: 'Sitting out',
-          big: '☕',
-          detail: 'Ask the organizer to add you back in',
-        };
-    }
-  });
+  constructor() {
+    this.store.connect(this.code);
+  }
 
   isMine(ids: string[]): boolean {
-    const uid = this.sessions.uid();
+    const uid = this.uid();
     return !!uid && ids.includes(uid);
   }
 
   async join(): Promise<void> {
     const n = this.name().trim();
     if (!n) return;
-    await this.sessions.join(this.code, n);
+    this.store.join({ code: this.code, name: n });
   }
 
   rest(): void {
-    this.sessions.rest(this.code);
+    this.store.rest({ code: this.code });
   }
 
   back(): void {
-    this.sessions.activate(this.code);
+    this.store.activate({ code: this.code });
   }
 
   leave(): void {
-    const uid = this.sessions.uid();
+    const uid = this.uid();
     if (uid && confirm('Leave this session?')) {
-      this.sessions.removePlayer(this.code, uid);
+      this.store.removePlayer({ code: this.code, id: uid });
     }
   }
 
