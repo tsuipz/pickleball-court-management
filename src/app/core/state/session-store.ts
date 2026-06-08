@@ -250,23 +250,48 @@ export const SessionStore = signalStore(
       // a repeat of the same key while in flight is dropped (double-tap guard),
       // but `mergeMap` lets distinct keys run concurrently. Tracks per-key
       // pending and surfaces failures.
+      //
+      // `project` is the optimistic echo: the same pure rotation transform the
+      // write applies, run locally against the current state and painted into the
+      // signal *immediately* so the tap feels instant. The authoritative
+      // transaction still runs; its committed `onSnapshot` reconciles the echo
+      // (no flicker when local state already matches the server). On failure we
+      // roll back to the pre-tap state — but only if our optimistic value is
+      // still showing, since a later action may have advanced it (the live
+      // snapshot reconciles that case).
       const mutation = <T>(
         keyOf: (input: T) => string,
         run: (input: T) => Promise<void>,
         message: string,
+        project?: (input: T, current: SessionState) => SessionState,
       ) =>
         rxMethod<T>(
           pipe(
             filter((input) => !store.pending()[keyOf(input)]),
             tap((input) => begin(keyOf(input))),
-            mergeMap((input) =>
-              from(run(input)).pipe(
+            mergeMap((input) => {
+              const before = store.state();
+              let projected: SessionState | null = null;
+              if (project && before) {
+                try {
+                  projected = project(input, before);
+                  patchState(store, { state: projected });
+                } catch {
+                  projected = null; // fall back to write-only; server is truth
+                }
+              }
+              return from(run(input)).pipe(
                 tapResponse({
                   next: () => done(keyOf(input)),
-                  error: fail(keyOf(input), message),
+                  error: (err: unknown) => {
+                    if (projected && store.state() === projected) {
+                      patchState(store, { state: before });
+                    }
+                    fail(keyOf(input), message)(err);
+                  },
                 }),
-              ),
-            ),
+              );
+            }),
           ),
         );
 
@@ -313,31 +338,46 @@ export const SessionStore = signalStore(
           () => 'join',
           ({ code, name }) => sessions.join(code, name),
           'Could not join the session.',
+          ({ name }, s) => {
+            const uid = sessions.uid();
+            return uid ? rotation.addPlayer(s, uid, name.trim(), Date.now()) : s;
+          },
         ),
         rest: mutation<{ code: string; id?: PlayerId }>(
           ({ id }) => (id ? `rest:${id}` : 'rest'),
           ({ code, id }) => sessions.rest(code, id),
           'Could not take a break.',
+          ({ id }, s) => {
+            const target = id ?? sessions.uid();
+            return target ? rotation.restPlayer(s, target) : s;
+          },
         ),
         activate: mutation<{ code: string; id?: PlayerId }>(
           ({ id }) => (id ? `activate:${id}` : 'activate'),
           ({ code, id }) => sessions.activate(code, id),
           'Could not jump back in.',
+          ({ id }, s) => {
+            const target = id ?? sessions.uid();
+            return target ? rotation.activatePlayer(s, target) : s;
+          },
         ),
         removePlayer: mutation<{ code: string; id: PlayerId }>(
           ({ id }) => `removePlayer:${id}`,
           ({ code, id }) => sessions.removePlayer(code, id),
           'Could not remove the player.',
+          ({ id }, s) => rotation.removePlayer(s, id),
         ),
         addCourt: mutation<{ code: string }>(
           () => 'addCourt',
           ({ code }) => sessions.addCourt(code),
           'Could not add a court.',
+          (_input, s) => rotation.addCourt(s),
         ),
         removeCourt: mutation<{ code: string; courtId: string }>(
           ({ courtId }) => `removeCourt:${courtId}`,
           ({ code, courtId }) => sessions.removeCourt(code, courtId),
           'Could not remove the court.',
+          ({ courtId }, s) => rotation.removeCourt(s, courtId),
         ),
         setMode: mutation<{
           code: string;
@@ -348,6 +388,8 @@ export const SessionStore = signalStore(
           ({ code, mode, challengerCourtId }) =>
             sessions.setMode(code, mode, challengerCourtId),
           'Could not switch modes.',
+          ({ mode, challengerCourtId }, s) =>
+            rotation.setMode(s, mode, challengerCourtId),
         ),
         finishStandardGame: mutation<{
           code: string;
@@ -358,6 +400,8 @@ export const SessionStore = signalStore(
           ({ code, courtId, opts }) =>
             sessions.finishStandardGame(code, courtId, opts),
           'Could not finish the game.',
+          ({ courtId, opts }, s) =>
+            rotation.finishStandardGame(s, courtId, opts ?? {}),
         ),
         finishChallengerGame: mutation<{
           code: string;
@@ -368,16 +412,20 @@ export const SessionStore = signalStore(
           ({ code, courtId, winningPairIds }) =>
             sessions.finishChallengerGame(code, courtId, winningPairIds),
           'Could not finish the game.',
+          ({ courtId, winningPairIds }, s) =>
+            rotation.finishChallengerGame(s, courtId, winningPairIds),
         ),
         reorderQueue: mutation<{ code: string; newQueue: PlayerId[] }>(
           () => 'reorderQueue',
           ({ code, newQueue }) => sessions.reorderQueue(code, newQueue),
           'Could not reorder the queue.',
+          ({ newQueue }, s) => rotation.reorderQueue(s, newQueue),
         ),
         endSession: mutation<{ code: string }>(
           () => 'endSession',
           ({ code }) => sessions.endSession(code),
           'Could not end the session.',
+          (_input, s) => rotation.endSession(s),
         ),
       };
     },
