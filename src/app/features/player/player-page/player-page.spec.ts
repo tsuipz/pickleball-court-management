@@ -59,7 +59,7 @@ function buildState(playerCount: number, courtCount = 1): SessionState {
     code: 'TEST1',
     name: 'Test',
     adminUid: 'admin',
-    adminToken: 'tok',
+    adminTokenHash: 'tok',
     courtCount,
     createdAt: 0,
   });

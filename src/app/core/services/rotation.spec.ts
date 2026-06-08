@@ -21,7 +21,7 @@ function base(courtCount = 2): SessionState {
     code: 'TEST1',
     name: 'Test',
     adminUid: 'admin',
-    adminToken: 'tok',
+    adminTokenHash: 'tok',
     courtCount,
     createdAt: 0,
   });
@@ -250,7 +250,7 @@ describe('admin auto-join', () => {
       code: 'A',
       name: 'n',
       adminUid: 'admin',
-      adminToken: 'tok',
+      adminTokenHash: 'tok',
       courtCount: 2,
       createdAt: 0,
       adminName: 'Riley',

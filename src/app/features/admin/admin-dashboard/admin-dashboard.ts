@@ -81,13 +81,22 @@ export class AdminDashboard {
 
       // A returning admin may carry a token (in the ?t= link or saved on this
       // device). Try to reclaim once; otherwise this is a player → redirect.
-      const token =
-        this.route.snapshot.queryParamMap.get('t') ??
-        this.sessions.storedAdminToken(this.code);
+      const urlToken = this.route.snapshot.queryParamMap.get('t');
+      const token = urlToken ?? this.sessions.storedAdminToken(this.code);
       if (token && !this.claimTried) {
         this.claimTried = true;
         this.sessions.claimAdmin(this.code, token).then((ok) => {
-          if (!ok) this.router.navigate(['/session', this.code]);
+          if (!ok) {
+            this.router.navigate(['/session', this.code]);
+          } else if (urlToken) {
+            // Reclaim succeeded from the link — drop the token from the URL so
+            // the secret doesn't linger in history or get re-shared.
+            this.router.navigate([], {
+              relativeTo: this.route,
+              queryParams: {},
+              replaceUrl: true,
+            });
+          }
         });
         return;
       }

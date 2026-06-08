@@ -4,17 +4,20 @@ rules_version = '2';
 //  - Everyone must be signed in (anonymous auth) to touch a session.
 //  - Anyone who knows the join code may read the session and write gameplay
 //    state (joining the queue is a write by a non-admin), but a non-admin may
-//    NOT reassign the admin unless they prove knowledge of adminToken.
+//    reassign neither the admin (adminUid) nor the admin token (adminTokenHash).
 //  - Admin re-claim: a returning admin (e.g. on a new device, via the transfer
-//    link) presents the matching adminToken and may change ONLY adminUid.
+//    link) presents a token whose SHA-256 matches the stored adminTokenHash and
+//    may change ONLY adminUid.
 //  - Only the admin may delete the session.
 //
-// Trade-offs (acceptable for a low-stakes app behind a hard-to-guess code):
-//  - Field-level validation of gameplay writes is impractical in rules, so any
-//    signed-in player who knows the code can perform any gameplay mutation.
-//  - adminToken lives in the (readable) session doc, so a determined snooper
-//    could read it and seize admin. It is never shown in the player UI.
-//  Harden both by moving writes behind Cloud Functions / the Admin SDK.
+// The doc stores only a SHA-256 *hash* of the admin token, so reading the doc
+// no longer leaks the bearer secret, and the non-admin clause below forbids
+// rewriting that hash — together these block admin seizure by a code-holder.
+//
+// Remaining trade-off (acceptable for a low-stakes app behind a hard-to-guess
+// code): field-level validation of gameplay writes is impractical in rules, so
+// any signed-in player who knows the code can still perform any *gameplay*
+// mutation. Harden that by moving writes behind Cloud Functions / the Admin SDK.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /sessions/{code} {
@@ -26,11 +29,15 @@ service cloud.firestore {
       allow update: if request.auth != null && (
         // The admin can change anything.
         request.auth.uid == resource.data.adminUid
-        // Non-admins may update gameplay but must leave adminUid untouched.
-        || request.resource.data.adminUid == resource.data.adminUid
-        // Admin re-claim: present the right token, change only adminUid.
+        // Non-admins may update gameplay but must touch neither the admin
+        // (adminUid) nor the admin token hash (adminTokenHash).
         || (
-          request.resource.data.adminToken == resource.data.adminToken
+          request.resource.data.adminUid == resource.data.adminUid
+          && request.resource.data.adminTokenHash == resource.data.adminTokenHash
+        )
+        // Admin re-claim: present a token whose hash matches, change only adminUid.
+        || (
+          request.resource.data.adminTokenHash == resource.data.adminTokenHash
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminUid'])
         )
       );
