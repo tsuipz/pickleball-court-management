@@ -80,10 +80,45 @@ firebase apps:sdkconfig WEB --project <your-project-id>
 
 The web API key is a **public client identifier** (it ships in the browser
 bundle), not a secret. We keep it out of the repo for hygiene, but real
-protection comes from: the Firestore security rules, Firebase Auth authorized
-domains, and **restricting the API key** in Google Cloud Console
-(APIs & Services → Credentials → your key → *Application restrictions:
-HTTP referrers* → add your dev/prod domains).
+protection comes from three layers: the Firestore security rules, Firebase Auth
+authorized domains (auto-configured for Hosting domains), and **restricting the
+API key** in Google Cloud Console. Once the bundle is public, the referrer
+allowlist is the practical guard that stops the key being reused from other
+origins — see the runbook below.
+
+### Restrict the API key (Google Cloud Console)
+
+In `APIs & Services → Credentials`, open the project's **Browser key**, then set
+both restrictions:
+
+**1. Application restrictions → Websites.** Add these referrer patterns
+(keep the trailing `/*`; matching is exact path-prefix):
+
+| Origin            | Pattern                                          |
+| ----------------- | ------------------------------------------------ |
+| Prod (Hosting)    | `pickleball-court-management.web.app/*`           |
+| Prod (Auth domain)| `pickleball-court-management.firebaseapp.com/*`   |
+| Local dev         | `localhost:4200/*`                                |
+
+**2. API restrictions → Restrict key.** Limit the key to only the APIs this app
+actually calls, so a leaked key can't be repurposed for other billed APIs:
+
+- **Identity Toolkit API** — Firebase Anonymous Auth
+- **Token Service API** — auth token refresh
+- **Cloud Firestore API** — the single `sessions/{code}` doc read/write path
+- **Firebase Installations API** — SDK bootstrap
+
+(`measurementId` analytics works without an extra key API, so it isn't listed.
+If you later add Storage, Remote Config, or full Analytics event ingestion, add
+the matching API here or those calls will 403.)
+
+**Gotchas.** Restriction changes take a few minutes to propagate. A sudden
+site-wide `PERMISSION_DENIED` / 403 after a deploy usually means the API
+restrictions are too tight — add the missing API rather than removing the
+referrer list. The referrer list is an allowlist of *origins*, not a secret; it
+does **not** replace the Firestore rules, which remain the real authZ boundary.
+For stronger hardening beyond key restriction, see the trade-off note in
+`firestore.rules` (moving writes behind Cloud Functions / App Check).
 
 ## Run locally
 
