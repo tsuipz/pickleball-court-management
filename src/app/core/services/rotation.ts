@@ -1,0 +1,430 @@
+/**
+ * Pure rotation logic for the pickleball session.
+ *
+ * Every exported operation takes the current `SessionState` and returns a NEW
+ * state (the input is never mutated). These functions contain no Firestore or
+ * Angular dependencies so they can be exhaustively unit-tested. The
+ * SessionService applies them inside a Firestore transaction.
+ */
+import {
+  ChallengerPair,
+  Court,
+  Player,
+  PlayerId,
+  PlayerLocation,
+  SessionMode,
+  SessionState,
+} from '../models/types';
+
+export const PLAYERS_PER_COURT = 4;
+export const PAIR = 2;
+
+function clone(s: SessionState): SessionState {
+  return structuredClone(s);
+}
+
+function challengerCourt(s: SessionState): Court | undefined {
+  return s.challengerCourtId
+    ? s.courts.find((c) => c.id === s.challengerCourtId)
+    : undefined;
+}
+
+/**
+ * Take the next pair (2 players) for the challenger court: prefer the
+ * challenger queue, otherwise pull the front two of the standard queue.
+ * Mutates `s` in place. Returns the pair, or null if none available.
+ */
+function takePair(s: SessionState): PlayerId[] | null {
+  if (s.challengerQueue.length > 0) {
+    return s.challengerQueue.shift()!.playerIds;
+  }
+  if (s.queue.length >= PAIR) {
+    return s.queue.splice(0, PAIR);
+  }
+  return null;
+}
+
+/** Seat waiting players onto any empty standard court (groups of 4). */
+function fillStandardCourts(s: SessionState): void {
+  for (const court of s.courts) {
+    if (court.id === s.challengerCourtId) continue;
+    if (
+      court.status === 'idle' &&
+      court.playerIds.length === 0 &&
+      s.queue.length >= PLAYERS_PER_COURT
+    ) {
+      court.playerIds = s.queue.splice(0, PLAYERS_PER_COURT);
+      court.status = 'in-progress';
+    }
+  }
+}
+
+/** Ensure the challenger court has an incumbent pair + a challenger pair. */
+function fillChallengerCourt(s: SessionState): void {
+  const court = challengerCourt(s);
+  if (!court) return;
+
+  let incumbent = court.incumbentPairIds ?? [];
+  if (incumbent.length < PAIR) {
+    const pair = takePair(s);
+    if (pair) incumbent = pair;
+  }
+
+  let challenger = court.playerIds.filter((id) => !incumbent.includes(id));
+  if (challenger.length < PAIR) {
+    const pair = takePair(s);
+    challenger = pair ?? [];
+  } else {
+    challenger = challenger.slice(0, PAIR);
+  }
+
+  court.incumbentPairIds = incumbent.length === PAIR ? incumbent : null;
+  court.playerIds = [...incumbent, ...challenger];
+  court.status =
+    court.playerIds.length === PLAYERS_PER_COURT ? 'in-progress' : 'idle';
+}
+
+/** Re-seat courts after any change. No-op once the session has ended.
+ *  The challenger court is filled FIRST so it gets priority on the next pair
+ *  before standard courts consume the queue. */
+function settle(s: SessionState): void {
+  if (s.status === 'ended') return;
+  if (s.challengerCourtId) fillChallengerCourt(s);
+  fillStandardCourts(s);
+}
+
+// --- Construction ---------------------------------------------------------
+
+export function createInitialSessionState(args: {
+  code: string;
+  name: string;
+  adminUid: string;
+  adminToken: string;
+  courtCount: number;
+  createdAt: number;
+  /** When set, the admin is added as a player (in the queue) right away. */
+  adminName?: string;
+}): SessionState {
+  const courts: Court[] = [];
+  for (let i = 0; i < args.courtCount; i++) {
+    courts.push({
+      id: `court-${i + 1}`,
+      number: i + 1,
+      type: 'standard',
+      status: 'idle',
+      playerIds: [],
+      incumbentPairIds: null,
+    });
+  }
+  const s: SessionState = {
+    code: args.code,
+    name: args.name,
+    adminUid: args.adminUid,
+    adminToken: args.adminToken,
+    status: 'active',
+    mode: 'standard',
+    challengerCourtId: null,
+    courts,
+    players: {},
+    queue: [],
+    challengerQueue: [],
+    createdAt: args.createdAt,
+  };
+  const adminName = args.adminName?.trim();
+  if (adminName) {
+    s.players[args.adminUid] = {
+      id: args.adminUid,
+      name: adminName,
+      joinedAt: args.createdAt,
+    };
+    s.queue.push(args.adminUid);
+    settle(s);
+  }
+  return s;
+}
+
+// --- Players --------------------------------------------------------------
+
+export function addPlayer(
+  state: SessionState,
+  id: PlayerId,
+  name: string,
+  now: number,
+): SessionState {
+  const s = clone(state);
+  if (s.players[id]) {
+    // Returning player: just refresh the display name, keep their spot.
+    s.players[id].name = name;
+  } else {
+    s.players[id] = { id, name, joinedAt: now };
+    s.queue.push(id);
+  }
+  settle(s);
+  return s;
+}
+
+/** Pull a player out of all active rotation (queue, courts, challenger queue).
+ *  Mutates `s` in place; does NOT touch the players map. */
+function pullFromRotation(s: SessionState, id: PlayerId): void {
+  s.queue = s.queue.filter((p) => p !== id);
+
+  // If they were waiting in a challenger pair, dissolve it and send the
+  // partner back to the standard queue.
+  const keptPairs: ChallengerPair[] = [];
+  for (const pair of s.challengerQueue) {
+    if (pair.playerIds.includes(id)) {
+      const partner = pair.playerIds.find((p) => p !== id);
+      if (partner) s.queue.push(partner);
+    } else {
+      keptPairs.push(pair);
+    }
+  }
+  s.challengerQueue = keptPairs;
+
+  for (const court of s.courts) {
+    if (court.playerIds.includes(id)) {
+      court.playerIds = court.playerIds.filter((p) => p !== id);
+      if (court.incumbentPairIds) {
+        court.incumbentPairIds = court.incumbentPairIds.filter((p) => p !== id);
+        if (court.incumbentPairIds.length === 0) court.incumbentPairIds = null;
+      }
+      if (court.playerIds.length === 0) court.status = 'idle';
+    }
+  }
+}
+
+/** Remove a player from the session entirely. */
+export function removePlayer(state: SessionState, id: PlayerId): SessionState {
+  const s = clone(state);
+  pullFromRotation(s, id);
+  delete s.players[id];
+  settle(s);
+  return s;
+}
+
+/** Sit a player out — they stay in the session (on the bench) but leave
+ *  rotation until they come back. */
+export function restPlayer(state: SessionState, id: PlayerId): SessionState {
+  const s = clone(state);
+  if (!s.players[id]) return s;
+  pullFromRotation(s, id);
+  settle(s);
+  return s;
+}
+
+/** Bring a benched player back into rotation (to the back of the queue). */
+export function activatePlayer(state: SessionState, id: PlayerId): SessionState {
+  const s = clone(state);
+  if (!s.players[id]) return s;
+  if (locatePlayer(s, id).kind === 'idle') {
+    s.queue.push(id);
+    settle(s);
+  }
+  return s;
+}
+
+/** Players who are in the session but currently sitting out. */
+export function benchedPlayers(s: SessionState): Player[] {
+  return Object.values(s.players).filter(
+    (p) => locatePlayer(s, p.id).kind === 'idle',
+  );
+}
+
+// --- Courts ---------------------------------------------------------------
+
+export function addCourt(state: SessionState): SessionState {
+  const s = clone(state);
+  const maxNumber = s.courts.reduce((m, c) => Math.max(m, c.number), 0);
+  const number = maxNumber + 1;
+  s.courts.push({
+    id: `court-${number}`,
+    number,
+    type: 'standard',
+    status: 'idle',
+    playerIds: [],
+    incumbentPairIds: null,
+  });
+  settle(s);
+  return s;
+}
+
+export function removeCourt(state: SessionState, courtId: string): SessionState {
+  const s = clone(state);
+  const court = s.courts.find((c) => c.id === courtId);
+  if (!court) return s;
+
+  s.queue.push(...court.playerIds);
+
+  if (s.challengerCourtId === courtId) {
+    for (const pair of s.challengerQueue) s.queue.push(...pair.playerIds);
+    s.challengerQueue = [];
+    s.challengerCourtId = null;
+    s.mode = 'standard';
+  }
+
+  s.courts = s.courts.filter((c) => c.id !== courtId);
+  settle(s);
+  return s;
+}
+
+// --- Mode -----------------------------------------------------------------
+
+export function setMode(
+  state: SessionState,
+  mode: SessionMode,
+  challengerCourtId?: string,
+): SessionState {
+  const s = clone(state);
+
+  if (mode === 'standard') {
+    const prev = challengerCourt(s);
+    if (prev) {
+      prev.type = 'standard';
+      prev.incumbentPairIds = null;
+    }
+    for (const pair of s.challengerQueue) s.queue.push(...pair.playerIds);
+    s.challengerQueue = [];
+    s.challengerCourtId = null;
+    s.mode = 'standard';
+    settle(s);
+    return s;
+  }
+
+  // mode === 'challenger'
+  const targetId = challengerCourtId ?? s.challengerCourtId ?? s.courts[0]?.id;
+  const target = s.courts.find((c) => c.id === targetId);
+  if (!target) return s;
+
+  // Revert any previously designated challenger court.
+  for (const c of s.courts) {
+    if (c.id !== target.id && c.type === 'challenger') {
+      c.type = 'standard';
+      c.incumbentPairIds = null;
+    }
+  }
+
+  s.mode = 'challenger';
+  s.challengerCourtId = target.id;
+  target.type = 'challenger';
+
+  if (!target.incumbentPairIds || target.incumbentPairIds.length < PAIR) {
+    if (target.playerIds.length === PLAYERS_PER_COURT) {
+      // Keep the current four playing — split into incumbent + challenger.
+      target.incumbentPairIds = target.playerIds.slice(0, PAIR);
+    } else if (target.playerIds.length > 0) {
+      // Partially filled: reseed cleanly from the queues.
+      s.queue.push(...target.playerIds);
+      target.playerIds = [];
+      target.incumbentPairIds = null;
+    }
+  }
+  settle(s);
+  return s;
+}
+
+// --- Finishing games ------------------------------------------------------
+
+export interface StandardFinishOptions {
+  /** The winning pair (challenger mode only, needed to offer promotion). */
+  winningPairIds?: PlayerId[];
+  /** When true, promote the winners into the challenger queue. */
+  promote?: boolean;
+}
+
+/** "Game finished" on a standard court. */
+export function finishStandardGame(
+  state: SessionState,
+  courtId: string,
+  opts: StandardFinishOptions = {},
+): SessionState {
+  const s = clone(state);
+  const court = s.courts.find((c) => c.id === courtId);
+  if (!court || court.id === s.challengerCourtId) return s;
+
+  const onCourt = [...court.playerIds];
+  court.playerIds = [];
+  court.status = 'idle';
+
+  const winners = opts.winningPairIds ?? [];
+  if (
+    s.mode === 'challenger' &&
+    opts.promote &&
+    winners.length === PAIR &&
+    winners.every((id) => onCourt.includes(id))
+  ) {
+    const losers = onCourt.filter((id) => !winners.includes(id));
+    s.challengerQueue.push({ playerIds: winners });
+    s.queue.push(...losers);
+  } else {
+    s.queue.push(...onCourt);
+  }
+  settle(s);
+  return s;
+}
+
+/** "Game finished" on the challenger court (2-on / 2-off, winner stays). */
+export function finishChallengerGame(
+  state: SessionState,
+  courtId: string,
+  winningPairIds: PlayerId[],
+): SessionState {
+  const s = clone(state);
+  const court = s.courts.find((c) => c.id === courtId);
+  if (!court || court.id !== s.challengerCourtId) return s;
+
+  const onCourt = [...court.playerIds];
+  const winners = winningPairIds.filter((id) => onCourt.includes(id));
+  if (winners.length !== PAIR) return s; // invalid selection — no-op
+
+  const losers = onCourt.filter((id) => !winners.includes(id));
+  s.queue.push(...losers); // losers go to the BACK of the standard queue
+
+  court.incumbentPairIds = winners; // winners stay
+  court.playerIds = [...winners];
+  court.status = 'idle';
+  settle(s); // pulls the next challenger pair onto the court
+  return s;
+}
+
+export function endSession(state: SessionState): SessionState {
+  const s = clone(state);
+  s.status = 'ended';
+  return s;
+}
+
+/** Admin-driven manual reorder of the standard queue. */
+export function reorderQueue(
+  state: SessionState,
+  newQueue: PlayerId[],
+): SessionState {
+  const s = clone(state);
+  const valid = newQueue.filter((id) => s.queue.includes(id));
+  // Preserve any ids the caller dropped, appended at the back.
+  const missing = s.queue.filter((id) => !valid.includes(id));
+  s.queue = [...valid, ...missing];
+  return s;
+}
+
+// --- Queries --------------------------------------------------------------
+
+export function locatePlayer(s: SessionState, id: PlayerId): PlayerLocation {
+  if (!s.players[id]) return { kind: 'absent' };
+
+  for (const court of s.courts) {
+    if (court.playerIds.includes(id)) return { kind: 'court', court };
+  }
+  const qi = s.queue.indexOf(id);
+  if (qi >= 0) {
+    return { kind: 'queue', position: qi + 1, total: s.queue.length };
+  }
+  for (let i = 0; i < s.challengerQueue.length; i++) {
+    if (s.challengerQueue[i].playerIds.includes(id)) {
+      return {
+        kind: 'challenger-queue',
+        position: i + 1,
+        total: s.challengerQueue.length,
+      };
+    }
+  }
+  return { kind: 'idle' };
+}

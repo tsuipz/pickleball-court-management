@@ -1,0 +1,151 @@
+@use '@angular/material' as mat;
+
+// ── Angular Material M3 theme ──────────────────────────────────────────────
+// Court green primary + optic-yellow tertiary, with our display/body fonts.
+html {
+  height: 100%;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$green-palette,
+        tertiary: mat.$yellow-palette,
+      ),
+      typography: (
+        plain-family: 'Hanken Grotesk',
+        brand-family: 'Bricolage Grotesque',
+        bold-weight: 800,
+        medium-weight: 600,
+        regular-weight: 400,
+      ),
+      density: 0,
+    )
+  );
+  color-scheme: light;
+
+  // Bend Material's system tokens toward the brand where it shows most.
+  // (Brand colors live in tailwind.css @theme as --color-*.)
+  --mat-sys-primary: var(--color-court);
+  --mat-sys-on-primary: #f4efdf;
+  --mat-sys-error: var(--color-clay-deep);
+}
+
+// ── Page atmosphere ──────────────────────────────────────────────────────────
+body {
+  margin: 0;
+  min-height: 100dvh;
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  background-color: var(--color-paper);
+  // Faint court-line grid + warm glow.
+  background-image:
+    radial-gradient(circle at 50% -5%, rgba(47, 112, 72, 0.12), transparent 55%),
+    linear-gradient(rgba(22, 39, 27, 0.045) 1.5px, transparent 1.5px),
+    linear-gradient(90deg, rgba(22, 39, 27, 0.045) 1.5px, transparent 1.5px);
+  background-size:
+    100% 100%,
+    34px 34px,
+    34px 34px;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+  line-height: 1.03;
+}
+
+// ── Motifs (pseudo-element heavy — kept as hand-written CSS) ──────────────────
+// A pickleball: lime disc with the signature holes.
+.ball {
+  --s: 1em;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.55), transparent 45%),
+    var(--color-lime);
+  border: 2px solid var(--color-ink);
+  position: relative;
+  flex: none;
+  display: inline-block;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    background-image: radial-gradient(circle, var(--color-ink) 0 1.1px, transparent 1.7px);
+    background-size: 26% 26%;
+    background-position: center;
+    opacity: 0.6;
+    mask: radial-gradient(circle at center, #000 58%, transparent 62%);
+  }
+}
+
+// Top-down court: green panel with a dashed net line across the middle.
+.court-net::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  top: 50%;
+  border-top: 2px dashed rgba(244, 239, 225, 0.7);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+// Pulsing "in play" dot.
+.live-dot {
+  box-shadow: 0 0 0 0 rgba(205, 106, 63, 0.6);
+  animation: pulse 1.6s ease-out infinite;
+}
+@keyframes pulse {
+  to {
+    box-shadow: 0 0 0 7px rgba(205, 106, 63, 0);
+  }
+}
+
+// Spinning net decoration on the hero.
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// Staggered entrance.
+@keyframes rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pop {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  [class*='animate-'] {
+    animation: none !important;
+  }
+}
+
+// ── Material component nudges ────────────────────────────────────────────────
+.mat-mdc-dialog-surface {
+  border: 2.5px solid var(--color-ink) !important;
+  border-radius: var(--radius-card) !important;
+  background: var(--color-paper) !important;
+  box-shadow: var(--shadow-hard) !important;
+}
+
+::selection {
+  background: var(--color-lime);
+  color: var(--color-ink);
+}

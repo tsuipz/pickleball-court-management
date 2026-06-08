@@ -1,0 +1,40 @@
+.bg-net {
+  position: absolute;
+  right: -140px;
+  top: 120px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  border: 2px dashed rgba(22, 39, 27, 0.18);
+  background: radial-gradient(circle, transparent 64%, rgba(214, 242, 75, 0.22) 65% 72%, transparent 73%);
+  pointer-events: none;
+  animation: spin 60s linear infinite;
+}
+.accent {
+  position: relative;
+  font-style: normal;
+}
+.accent::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0.08em;
+  height: 0.16em;
+  background: var(--color-lime);
+  z-index: -1;
+}
+.stagger {
+  opacity: 0;
+  transform: translateY(16px);
+  animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+  animation-delay: calc(var(--d) * 90ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  .stagger,
+  .bg-net {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

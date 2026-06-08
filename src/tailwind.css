@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+/* The Dink Club design language, expressed as Tailwind theme tokens.
+   Every token here also emits a :root CSS variable (e.g. --color-court),
+   so the motif classes in styles.scss can reference them too. */
+@theme {
+  --color-paper: #f2ecdd;
+  --color-paper-2: #e9e0cb;
+  --color-paper-3: #ded2b6;
+  --color-ink: #16271b;
+  --color-ink-soft: #4a5a4d;
+
+  --color-court: #2f7048;
+  --color-court-deep: #1f4d30;
+
+  --color-lime: #d6f24b;
+  --color-lime-deep: #b9d92f;
+  --color-clay: #cd6a3f;
+  --color-clay-deep: #b1522b;
+
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Hanken Grotesk', system-ui, sans-serif;
+
+  --radius-card: 18px;
+
+  --shadow-hard: 4px 4px 0 #16271b;
+  --shadow-hard-sm: 3px 3px 0 #16271b;
+  --shadow-hard-lime: 4px 4px 0 #b9d92f;
+}

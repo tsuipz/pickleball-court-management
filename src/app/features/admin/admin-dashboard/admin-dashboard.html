@@ -1,0 +1,161 @@
+@let s = state();
+@if (s === null) {
+  <div class="flex items-center justify-center gap-3 px-4 py-16 font-semibold text-ink-soft">
+    <span class="ball" style="--s: 2.5rem"></span> Loading…
+  </div>
+} @else {
+  <header class="scoreboard sticky top-0 z-10 flex items-center gap-3 border-b-[3px] border-ink bg-court-deep px-4 py-[0.9rem] text-paper">
+    <div class="flex min-w-0 flex-col">
+      <span class="font-display text-[0.66rem] font-bold tracking-[0.16em] opacity-70">
+        THE DINK CLUB · ADMIN
+      </span>
+      <h1 class="mt-[0.1rem] max-w-[52vw] truncate text-[1.5rem] font-extrabold">
+        {{ s.name }}
+      </h1>
+    </div>
+    <button
+      (click)="copyLink()"
+      title="Copy join link"
+      class="ml-auto grid cursor-pointer grid-cols-[auto_auto] items-center gap-x-2 rounded-xl border-[2.5px] border-ink bg-lime px-3 py-[0.4rem] text-ink shadow-[3px_3px_0_rgba(0,0,0,0.45)] transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
+    >
+      <span class="col-start-1 text-[0.55rem] font-bold tracking-[0.14em] opacity-70">JOIN CODE</span>
+      <span class="col-start-1 row-start-2 font-display text-[1.4rem] font-extrabold tracking-[0.1em] tabular-nums">{{ s.code }}</span>
+      <span class="col-start-2 row-span-2 self-center text-[1.2rem]">⧉</span>
+    </button>
+  </header>
+
+  @if (s.status === 'ended') {
+    <div class="mx-4 mt-[0.9rem] rounded-xl border-[2.5px] border-ink bg-clay px-4 py-[0.8rem] text-center font-bold text-paper">
+      🏁 This session has ended.
+    </div>
+  }
+
+  <section class="flex flex-col gap-3 p-4">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <mat-slide-toggle
+        [checked]="s.mode === 'challenger'"
+        (change)="toggleMode($event.checked)"
+      >
+        <span class="font-bold">Challenger mode</span>
+      </mat-slide-toggle>
+
+      <div class="flex gap-[0.6rem]">
+        <button
+          (click)="addCourt()"
+          class="cursor-pointer rounded-full border-[2.5px] border-ink bg-lime px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-ink shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
+        >
+          ＋ Court
+        </button>
+        <button
+          (click)="endSession()"
+          [disabled]="s.status === 'ended'"
+          class="cursor-pointer rounded-full border-[2.5px] border-ink bg-paper px-[1.1rem] py-[0.6rem] font-display text-[0.95rem] font-extrabold text-clay-deep shadow-hard-sm transition-[transform,box-shadow] active:translate-x-[3px] active:translate-y-[3px] active:shadow-none disabled:opacity-50 disabled:shadow-none"
+        >
+          End
+        </button>
+      </div>
+    </div>
+
+    @if (s.mode === 'challenger') {
+      <mat-form-field appearance="outline" subscriptSizing="dynamic" class="w-full">
+        <mat-label>Challenger court</mat-label>
+        <mat-select
+          [value]="s.challengerCourtId"
+          (selectionChange)="setChallengerCourt($event.value)"
+        >
+          @for (c of s.courts; track c.id) {
+            <mat-option [value]="c.id">Court {{ c.number }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+    }
+  </section>
+
+  <section class="px-4 pb-1">
+    <div class="flex flex-wrap items-center gap-3 rounded-card border-2 border-ink bg-paper-2 px-4 py-[0.7rem]">
+      @if (me(); as m) {
+        <span class="font-semibold">Playing as <b class="font-display">{{ m.name }}</b></span>
+        @if (myResting()) {
+          <button (click)="selfBack()" class="cursor-pointer rounded-full border-2 border-ink bg-lime px-[0.9rem] py-[0.35rem] font-display text-[0.85rem] font-extrabold text-ink shadow-hard-sm transition-transform active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">🏓 Jump back in</button>
+        } @else {
+          <button (click)="selfRest()" class="cursor-pointer rounded-full border-2 border-ink bg-paper px-[0.9rem] py-[0.35rem] font-display text-[0.85rem] font-extrabold text-ink shadow-hard-sm transition-transform active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">☕ Take a break</button>
+        }
+      } @else {
+        <span class="font-semibold text-ink-soft">You're running the courts</span>
+        <button (click)="joinAsPlayer()" class="cursor-pointer rounded-full border-2 border-ink bg-lime px-[0.9rem] py-[0.35rem] font-display text-[0.85rem] font-extrabold text-ink shadow-hard-sm transition-transform active:translate-x-[2px] active:translate-y-[2px] active:shadow-none">＋ Join as player</button>
+      }
+      <span class="flex-1"></span>
+      <button (click)="copyAdminLink()" title="Link to re-open admin on another device" class="cursor-pointer rounded-full border-2 border-ink/40 px-[0.9rem] py-[0.35rem] text-[0.8rem] font-semibold text-ink-soft hover:border-ink hover:text-ink">🔑 Admin link</button>
+    </div>
+  </section>
+
+  <section class="grid grid-cols-1 gap-[0.85rem] px-4 sm:grid-cols-2">
+    @for (c of s.courts; track c.id) {
+      <app-court-card
+        [court]="c"
+        [players]="s.players"
+        [isAdmin]="true"
+        (finish)="finishGame(c)"
+        (remove)="removeCourt(c)"
+      />
+    }
+  </section>
+
+  <section class="grid grid-cols-1 gap-[0.85rem] p-4 sm:grid-cols-2">
+    <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard">
+      <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+        <span>Up next</span>
+        <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full bg-ink px-[0.4rem] text-[0.9rem] text-paper tabular-nums">{{ queue().length }}</span>
+      </h3>
+      <div cdkDropList (cdkDropListDropped)="drop($event)" class="flex flex-col gap-[0.45rem]">
+        @for (item of queue(); track item.id; let i = $index) {
+          <div cdkDrag class="row flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
+            <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-court font-display text-[0.85rem] font-extrabold text-paper tabular-nums">{{ i + 1 }}</span>
+            <span class="flex-1 font-semibold">{{ item.name }}</span>
+            <span cdkDragHandle title="Drag to reorder" class="cursor-grab text-[1.1rem] text-ink-soft">⠿</span>
+            <button (click)="remove(item.id)" title="Remove" class="cursor-pointer rounded-md border-0 bg-transparent px-[0.4rem] py-[0.2rem] text-[0.95rem] text-clay-deep hover:bg-clay hover:text-paper">✕</button>
+          </div>
+        } @empty {
+          <p class="my-[0.3rem] italic text-ink-soft">No one waiting — share the code to fill the queue.</p>
+        }
+      </div>
+    </div>
+
+    @if (s.mode === 'challenger') {
+      <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard-lime">
+        <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+          <span>🏆 Challenger queue</span>
+          <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full border-2 border-ink bg-lime px-[0.4rem] text-[0.9rem] text-ink tabular-nums">{{ challengerPairs().length }}</span>
+        </h3>
+        <div class="flex flex-col gap-[0.45rem]">
+          @for (pair of challengerPairs(); track $index; let i = $index) {
+            <div class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
+              <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-lime font-display text-[0.85rem] font-extrabold text-ink tabular-nums">{{ i + 1 }}</span>
+              <span class="flex-1 font-semibold">{{ pair.names }}</span>
+            </div>
+          } @empty {
+            <p class="my-[0.3rem] italic text-ink-soft">No challengers waiting.</p>
+          }
+        </div>
+      </div>
+    }
+
+    @if (benched().length) {
+      <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard">
+        <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+          <span>☕ On the bench</span>
+          <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full bg-ink px-[0.4rem] text-[0.9rem] text-paper tabular-nums">{{ benched().length }}</span>
+        </h3>
+        <div class="flex flex-col gap-[0.45rem]">
+          @for (p of benched(); track p.id) {
+            <div class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink bg-paper-2 px-[0.6rem] py-[0.5rem]">
+              <span class="flex-1 font-semibold">{{ p.name }}</span>
+              <button (click)="backIn(p.id)" class="cursor-pointer rounded-full border-2 border-ink bg-lime px-[0.7rem] py-[0.25rem] font-display text-[0.8rem] font-extrabold text-ink">Back in</button>
+              <button (click)="remove(p.id)" title="Remove" class="cursor-pointer rounded-md border-0 bg-transparent px-[0.4rem] py-[0.2rem] text-[0.95rem] text-clay-deep hover:bg-clay hover:text-paper">✕</button>
+            </div>
+          }
+        </div>
+      </div>
+    }
+  </section>
+}

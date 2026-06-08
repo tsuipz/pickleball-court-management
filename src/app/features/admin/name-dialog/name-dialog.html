@@ -1,0 +1,20 @@
+<h2 mat-dialog-title class="!font-display !font-extrabold">Join as a player</h2>
+<mat-dialog-content>
+  <mat-form-field appearance="outline" class="w-full" subscriptSizing="dynamic">
+    <mat-label>Your name</mat-label>
+    <input
+      matInput
+      name="name"
+      [(ngModel)]="name"
+      maxlength="40"
+      (keyup.enter)="confirm()"
+      cdkFocusInitial
+    />
+  </mat-form-field>
+</mat-dialog-content>
+<mat-dialog-actions align="end">
+  <button matButton mat-dialog-close>Cancel</button>
+  <button matButton="filled" (click)="confirm()" [disabled]="!name().trim()">
+    Join the queue
+  </button>
+</mat-dialog-actions>

@@ -1,0 +1,95 @@
+@let c = court();
+@let ch = c.type === 'challenger';
+@let live = c.status === 'in-progress';
+<article
+  class="relative rounded-card border-[2.5px] border-ink bg-paper px-[0.9rem] pb-[0.95rem] pt-[0.85rem]"
+  [class.shadow-hard]="!ch"
+  [class.shadow-hard-lime]="ch"
+>
+  <div class="mb-[0.7rem] flex items-center gap-[0.65rem]">
+    <span
+      class="grid h-[2.6rem] w-[2.6rem] flex-none place-items-center rounded-xl border-[2.5px] border-ink font-display text-[2.1rem] font-extrabold leading-[0.9]"
+      [class.bg-lime]="!ch"
+      [class.text-ink]="!ch"
+      [class.bg-court]="ch"
+      [class.text-paper]="ch"
+    >
+      {{ c.number }}
+    </span>
+    <div class="flex flex-col gap-[0.1rem]">
+      <span class="font-display text-[0.72rem] font-bold uppercase tracking-[0.1em] text-ink-soft">
+        {{ ch ? 'Challenger court' : 'Court' }}
+      </span>
+      <span
+        class="inline-flex items-center gap-[0.35rem] text-[0.9rem] font-semibold"
+        [class.text-ink-soft]="!live"
+        [class.text-court-deep]="live"
+      >
+        <i
+          class="h-2 w-2 rounded-full"
+          [class.bg-ink-soft]="!live"
+          [class.bg-clay]="live"
+          [class.live-dot]="live"
+        ></i>
+        {{ live ? 'In play' : 'Open' }}
+      </span>
+    </div>
+    @if (ch) {
+      <span class="ml-auto text-[1.3rem]" title="Winner stays">🏆</span>
+    }
+  </div>
+
+  <div class="court" [class.empty]="seats().length === 0">
+    @if (seats().length) {
+      @for (team of teams(); track $index; let ti = $index) {
+        @if (team.length) {
+          @if (ti === 1) {
+            <div class="net"></div>
+          }
+          <div class="team">
+            <span class="team-label">{{ teamLabel(ti) }}</span>
+            <div class="team-tags">
+              @for (seat of team; track seat.id) {
+              <span
+                class="relative z-[1] inline-flex items-center gap-[0.3rem] rounded-full border-2 border-ink px-[0.7rem] py-[0.32rem] text-[0.92rem] font-semibold text-ink shadow-[2px_2px_0_rgba(22,39,27,0.55)]"
+                [class.bg-paper]="!seat.incumbent"
+                [class.bg-lime]="seat.incumbent"
+                [class.you-here]="seat.you"
+              >
+                {{ seat.name }}
+                @if (seat.incumbent) {
+                  <i class="not-italic text-clay-deep" title="Staying — won last game">★</i>
+                }
+                @if (seat.you) {
+                  <i class="not-italic text-[0.7rem] text-clay-deep">you</i>
+                }
+              </span>
+              }
+            </div>
+          </div>
+        }
+      }
+    } @else {
+      <span class="text-[0.9rem] italic text-ink-soft">waiting for players…</span>
+    }
+  </div>
+
+  @if (isAdmin()) {
+    <div class="mt-[0.8rem] flex gap-[0.5rem]">
+      <button
+        (click)="finish.emit()"
+        [disabled]="c.playerIds.length === 0"
+        class="flex-1 cursor-pointer rounded-[11px] border-[2.5px] border-ink bg-ink py-[0.7rem] font-display text-[0.98rem] font-extrabold text-paper transition-[transform,background] hover:bg-court-deep active:translate-y-[2px] disabled:cursor-default disabled:opacity-40"
+      >
+        Game finished
+      </button>
+      <button
+        (click)="remove.emit()"
+        title="Remove court"
+        class="w-12 flex-none cursor-pointer rounded-[11px] border-[2.5px] border-ink bg-paper-2 text-base font-bold text-clay-deep hover:bg-clay hover:text-paper"
+      >
+        ✕
+      </button>
+    </div>
+  }
+</article>

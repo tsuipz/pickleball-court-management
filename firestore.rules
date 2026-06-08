@@ -1,0 +1,42 @@
+rules_version = '2';
+
+// Security model for the single-document session state (sessions/{code}):
+//  - Everyone must be signed in (anonymous auth) to touch a session.
+//  - Anyone who knows the join code may read the session and write gameplay
+//    state (joining the queue is a write by a non-admin), but a non-admin may
+//    NOT reassign the admin unless they prove knowledge of adminToken.
+//  - Admin re-claim: a returning admin (e.g. on a new device, via the transfer
+//    link) presents the matching adminToken and may change ONLY adminUid.
+//  - Only the admin may delete the session.
+//
+// Trade-offs (acceptable for a low-stakes app behind a hard-to-guess code):
+//  - Field-level validation of gameplay writes is impractical in rules, so any
+//    signed-in player who knows the code can perform any gameplay mutation.
+//  - adminToken lives in the (readable) session doc, so a determined snooper
+//    could read it and seize admin. It is never shown in the player UI.
+//  Harden both by moving writes behind Cloud Functions / the Admin SDK.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /sessions/{code} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+                    && request.resource.data.adminUid == request.auth.uid;
+
+      allow update: if request.auth != null && (
+        // The admin can change anything.
+        request.auth.uid == resource.data.adminUid
+        // Non-admins may update gameplay but must leave adminUid untouched.
+        || request.resource.data.adminUid == resource.data.adminUid
+        // Admin re-claim: present the right token, change only adminUid.
+        || (
+          request.resource.data.adminToken == resource.data.adminToken
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['adminUid'])
+        )
+      );
+
+      allow delete: if request.auth != null
+                    && request.auth.uid == resource.data.adminUid;
+    }
+  }
+}

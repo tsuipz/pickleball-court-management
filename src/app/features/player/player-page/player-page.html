@@ -1,0 +1,178 @@
+@let s = state();
+@if (s === null) {
+  <div class="flex items-center justify-center gap-3 px-4 py-20 font-semibold text-ink-soft">
+    <span class="ball" style="--s: 2.5rem"></span> Finding {{ code }}…
+  </div>
+} @else if (s.status === 'ended') {
+  <div class="flex min-h-dvh flex-col items-center justify-center p-8 text-center">
+    <div class="text-6xl">🏁</div>
+    <h1 class="mb-1 mt-2">{{ s.name }}</h1>
+    <p class="text-ink-soft">This session has wrapped up. Thanks for playing!</p>
+  </div>
+} @else if (!joined()) {
+  <main class="mx-auto flex min-h-dvh max-w-[480px] flex-col justify-center px-5 py-[clamp(1.5rem,8vw,3.5rem)]">
+    <header class="mb-6 flex items-center gap-2">
+      <span class="ball" style="--s: 1.3rem"></span>
+      <span class="font-display text-[0.8rem] font-extrabold tracking-[0.12em] text-court-deep">
+        THE&nbsp;DINK&nbsp;CLUB
+      </span>
+    </header>
+    <h1 class="m-0 text-[clamp(2.5rem,11vw,3.5rem)] font-extrabold text-ink">{{ s.name }}</h1>
+    <p class="mb-7 mt-2 text-[1.05rem] text-ink-soft">Drop your name in to join the queue.</p>
+
+    <div class="flex flex-col rounded-card border-[2.5px] border-ink bg-paper p-[1.4rem] shadow-hard">
+      <label class="mb-[0.35rem] font-display text-[0.8rem] font-bold uppercase tracking-[0.08em] text-ink-soft" for="pname">
+        Your name
+      </label>
+      <mat-form-field appearance="outline" class="w-full" subscriptSizing="dynamic">
+        <input
+          id="pname"
+          matInput
+          name="name"
+          [(ngModel)]="name"
+          maxlength="40"
+          placeholder="e.g. Jordan"
+          (keyup.enter)="join()"
+        />
+      </mat-form-field>
+      <button
+        (click)="join()"
+        [disabled]="!name().trim()"
+        class="mt-[1.2rem] inline-flex cursor-pointer items-center justify-center gap-[0.55rem] rounded-[14px] border-[2.5px] border-ink bg-court p-4 font-display text-[1.15rem] font-extrabold text-paper shadow-hard transition-[transform,background] hover:bg-court-deep active:translate-x-1 active:translate-y-1 active:shadow-none disabled:cursor-default disabled:opacity-55"
+      >
+        <span class="ball" style="--s: 1.2rem"></span> Join the queue
+      </button>
+    </div>
+  </main>
+} @else {
+  @let st = status();
+  <div class="mx-auto min-h-dvh max-w-[640px]">
+    <header class="sticky top-0 z-10 flex items-center gap-2 border-b-[3px] border-ink bg-court-deep px-[1.1rem] py-[0.8rem] text-paper">
+      <span class="ball" style="--s: 1.1rem"></span>
+      <span class="font-display font-bold">{{ s.name }}</span>
+      @if (myName(); as n) {
+        <span class="ml-auto rounded-full border-2 border-lime/60 px-[0.7rem] py-[0.2rem] text-[0.85rem] font-semibold">
+          You · {{ n }}
+        </span>
+      }
+    </header>
+
+    <!-- Personal status -->
+    <div
+      class="relative overflow-hidden px-6 pb-[clamp(1.5rem,6vw,2.5rem)] pt-[clamp(2rem,9vw,3.5rem)] text-center"
+      [class.court-glow]="st.kind === 'court'"
+    >
+      <span class="pop pop-1 inline-block font-display text-[0.8rem] font-extrabold uppercase tracking-[0.18em] text-ink-soft">
+        {{ st.label }}
+      </span>
+      <div
+        class="pop pop-2 my-[0.3rem] font-display text-[clamp(3.5rem,22vw,7rem)] font-extrabold leading-[0.9] tracking-[-0.03em]"
+        [class.text-court]="st.kind === 'court'"
+        [class.text-clay-deep]="st.kind === 'challenger'"
+        [class.text-ink]="st.kind !== 'court' && st.kind !== 'challenger'"
+      >
+        {{ st.big }}
+      </div>
+      @if (st.detail) {
+        <span class="pop pop-3 text-[1.05rem] font-semibold text-ink-soft">{{ st.detail }}</span>
+      }
+    </div>
+
+    <div class="mb-5 flex flex-wrap items-center justify-center gap-3 px-5">
+      @if (st.kind === 'idle') {
+        <button
+          (click)="back()"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border-[2.5px] border-ink bg-lime px-5 py-[0.7rem] font-display font-extrabold text-ink shadow-hard-sm transition-transform active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
+        >
+          🏓 I'm back in
+        </button>
+      } @else {
+        <button
+          (click)="rest()"
+          class="inline-flex cursor-pointer items-center gap-2 rounded-full border-[2.5px] border-ink bg-paper px-5 py-[0.7rem] font-display font-extrabold text-ink shadow-hard-sm transition-transform active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
+        >
+          ☕ Take a break
+        </button>
+      }
+      <button
+        (click)="leave()"
+        class="cursor-pointer rounded-full border-2 border-ink/40 px-4 py-[0.7rem] text-[0.9rem] font-semibold text-ink-soft transition-colors hover:border-clay hover:text-clay-deep"
+      >
+        Leave
+      </button>
+    </div>
+
+    <!-- Who's on the courts -->
+    <section class="grid grid-cols-1 gap-[0.85rem] px-4 sm:grid-cols-2">
+      @for (c of s.courts; track c.id) {
+        <app-court-card [court]="c" [players]="s.players" [me]="uid()" />
+      }
+    </section>
+
+    <!-- The queues -->
+    <section class="grid grid-cols-1 gap-[0.85rem] p-4 sm:grid-cols-2">
+      <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard">
+        <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+          <span>Up next</span>
+          <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full bg-ink px-[0.4rem] text-[0.9rem] text-paper tabular-nums">{{ queue().length }}</span>
+        </h3>
+        <div class="flex flex-col gap-[0.45rem]">
+          @for (item of queue(); track item.id) {
+            <div
+              class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink px-[0.6rem] py-[0.5rem]"
+              [class.bg-paper-2]="!item.me"
+              [class.bg-lime]="item.me"
+            >
+              <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-court font-display text-[0.85rem] font-extrabold text-paper tabular-nums">{{ item.pos }}</span>
+              <span class="flex-1 font-semibold">{{ item.name }}@if (item.me) {<span class="text-clay-deep"> · you</span>}</span>
+            </div>
+          } @empty {
+            <p class="my-[0.3rem] italic text-ink-soft">Queue's empty — hop in!</p>
+          }
+        </div>
+      </div>
+
+      @if (s.mode === 'challenger') {
+        <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard-lime">
+          <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+            <span>🏆 Challenger queue</span>
+            <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full border-2 border-ink bg-lime px-[0.4rem] text-[0.9rem] text-ink tabular-nums">{{ challengerPairs().length }}</span>
+          </h3>
+          <div class="flex flex-col gap-[0.45rem]">
+            @for (pair of challengerPairs(); track $index; let i = $index) {
+              <div
+                class="flex items-center gap-[0.65rem] rounded-[11px] border-2 border-ink px-[0.6rem] py-[0.5rem]"
+                [class.bg-paper-2]="!pair.me"
+                [class.bg-lime]="pair.me"
+              >
+                <span class="grid h-[1.7rem] w-[1.7rem] flex-none place-items-center rounded-lg bg-lime font-display text-[0.85rem] font-extrabold text-ink tabular-nums">{{ i + 1 }}</span>
+                <span class="flex-1 font-semibold">{{ pair.names }}</span>
+              </div>
+            } @empty {
+              <p class="my-[0.3rem] italic text-ink-soft">No challengers yet.</p>
+            }
+          </div>
+        </div>
+      }
+
+      @if (benched().length) {
+        <div class="rounded-card border-[2.5px] border-ink bg-paper px-4 pb-4 pt-[0.9rem] shadow-hard">
+          <h3 class="mb-[0.6rem] flex items-center justify-between text-[1.15rem] font-extrabold">
+            <span>☕ On the bench</span>
+            <span class="grid h-[1.8rem] min-w-[1.8rem] place-items-center rounded-full bg-ink px-[0.4rem] text-[0.9rem] text-paper tabular-nums">{{ benched().length }}</span>
+          </h3>
+          <div class="flex flex-wrap gap-[0.4rem]">
+            @for (p of benched(); track p.id) {
+              <span
+                class="rounded-full border-2 border-ink px-[0.7rem] py-[0.3rem] text-[0.9rem] font-semibold"
+                [class.bg-paper-2]="p.id !== uid()"
+                [class.bg-lime]="p.id === uid()"
+              >{{ p.name }}</span>
+            }
+          </div>
+        </div>
+      }
+    </section>
+    <div class="h-8"></div>
+  </div>
+}
