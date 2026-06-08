@@ -8,6 +8,7 @@ import {
 } from '@angular/material/dialog';
 import { Court, Player, PlayerId, SessionMode } from '../../../core/models/types';
 
+/** Input data passed to the dialog when a court's game is finished. */
 export interface EndGameData {
   court: Court;
   players: Record<PlayerId, Player>;
@@ -15,11 +16,19 @@ export interface EndGameData {
   isChallengerCourt: boolean;
 }
 
+/** What the dialog returns: the chosen winning pair (if any) and whether to
+ *  promote them to the challenger queue. `undefined` close = cancelled. */
 export interface EndGameResult {
   winningPairIds?: PlayerId[];
   promote?: boolean;
 }
 
+/**
+ * "Game finished" dialog. On the challenger court a winning pair is required
+ * (they stay on); on a standard court in challenger mode a winning pair is
+ * optional and can be promoted to the challenger queue; in plain standard mode
+ * no winner is needed. Selection is capped at two and replaces the oldest pick.
+ */
 @Component({
   selector: 'app-end-game-dialog',
   imports: [MatButtonModule, MatCheckboxModule, MatDialogModule],

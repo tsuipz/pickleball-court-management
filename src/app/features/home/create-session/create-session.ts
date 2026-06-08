@@ -5,6 +5,11 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { SessionService } from '../../../core/services/session.service';
 
+/**
+ * Home page (route `/`). Two entry points: create a new session (optionally
+ * joining it as a player by giving your name) which navigates to the admin
+ * view, or jump into an existing session by code/link via {@link goJoin}.
+ */
 @Component({
   selector: 'app-create-session',
   imports: [FormsModule, MatFormFieldModule, MatInputModule],

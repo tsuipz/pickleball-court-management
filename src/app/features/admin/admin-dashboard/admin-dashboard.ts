@@ -27,6 +27,15 @@ import {
 } from '../end-game-dialog/end-game-dialog';
 import { NameDialog } from '../name-dialog/name-dialog';
 
+/**
+ * Admin control surface (route `/session/:code/admin`). Shows live courts and
+ * queues and drives every gameplay action through {@link SessionService}.
+ *
+ * Access control: a constructor `effect` watches the live state — if this
+ * device isn't the admin it tries to reclaim the role with a token (from the
+ * `?t=` transfer link or localStorage) and otherwise redirects to the player
+ * view. The organizer can also play, bench themselves, and reorder the queue.
+ */
 @Component({
   selector: 'app-admin-dashboard',
   imports: [

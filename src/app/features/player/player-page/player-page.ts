@@ -15,6 +15,12 @@ import { CourtCard } from '../../admin/court-card/court-card';
 
 type StatusKind = 'court' | 'queue' | 'challenger' | 'idle' | 'loading';
 
+/**
+ * Player view (route `/session/:code`, the shareable link). Prompts for a name
+ * to join, then becomes a live, glanceable dashboard: the player's own status
+ * ({@link status}), who's on each court, and the queues — all read-only except
+ * for take-a-break / I'm-back / leave. Reused by anyone who isn't the admin.
+ */
 @Component({
   selector: 'app-player-page',
   imports: [FormsModule, MatFormFieldModule, MatInputModule, CourtCard],

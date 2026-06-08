@@ -95,6 +95,11 @@ function settle(s: SessionState): void {
 
 // --- Construction ---------------------------------------------------------
 
+/**
+ * Build a fresh session: N idle standard courts, empty queues, standard mode.
+ * If `adminName` is given, the admin is also seated into the queue as a player
+ * (and courts are settled), so an organizer who wants to play gets a spot.
+ */
 export function createInitialSessionState(args: {
   code: string;
   name: string;
@@ -145,6 +150,11 @@ export function createInitialSessionState(args: {
 
 // --- Players --------------------------------------------------------------
 
+/**
+ * Add a player to the session by uid. New players go to the back of the queue
+ * (and courts re-settle); a returning uid just has its display name refreshed,
+ * keeping its current spot.
+ */
 export function addPlayer(
   state: SessionState,
   id: PlayerId,
@@ -232,6 +242,8 @@ export function benchedPlayers(s: SessionState): Player[] {
 
 // --- Courts ---------------------------------------------------------------
 
+/** Add a new idle standard court (numbered after the highest existing one),
+ *  then seat waiting players if enough are queued. */
 export function addCourt(state: SessionState): SessionState {
   const s = clone(state);
   const maxNumber = s.courts.reduce((m, c) => Math.max(m, c.number), 0);
@@ -248,6 +260,9 @@ export function addCourt(state: SessionState): SessionState {
   return s;
 }
 
+/** Remove a court, returning its players to the queue. Removing the challenger
+ *  court also reverts the session to standard mode and flushes the challenger
+ *  queue back into the standard queue. */
 export function removeCourt(state: SessionState, courtId: string): SessionState {
   const s = clone(state);
   const court = s.courts.find((c) => c.id === courtId);
@@ -269,6 +284,14 @@ export function removeCourt(state: SessionState, courtId: string): SessionState 
 
 // --- Mode -----------------------------------------------------------------
 
+/**
+ * Switch between standard and challenger mode.
+ * - To challenger: designate `challengerCourtId` (defaults to the current one
+ *   or the first court). A court already holding four keeps playing with its
+ *   first two as the incumbent pair; a partially-filled court is reseeded.
+ * - To standard: revert the challenger court and flush the challenger queue
+ *   back into the standard queue.
+ */
 export function setMode(
   state: SessionState,
   mode: SessionMode,
@@ -386,6 +409,7 @@ export function finishChallengerGame(
   return s;
 }
 
+/** Mark the session ended. After this, `settle()` stops re-seating courts. */
 export function endSession(state: SessionState): SessionState {
   const s = clone(state);
   s.status = 'ended';
@@ -407,6 +431,8 @@ export function reorderQueue(
 
 // --- Queries --------------------------------------------------------------
 
+/** Find where a player currently is (on a court, in a queue, benched, or not
+ *  in the session) — drives the player status view and the bench list. */
 export function locatePlayer(s: SessionState, id: PlayerId): PlayerLocation {
   if (!s.players[id]) return { kind: 'absent' };
 

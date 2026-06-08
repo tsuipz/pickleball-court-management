@@ -8,19 +8,30 @@ interface SeatVm {
   you: boolean;
 }
 
+/**
+ * Presentational top-down court: renders the two doubles teams across a net,
+ * marking the incumbent (staying) pair and the viewer's own tag. Shared by the
+ * admin dashboard (with action buttons) and the player view (read-only). Holds
+ * no state — everything comes from inputs; actions are emitted, not performed.
+ */
 @Component({
   selector: 'app-court-card',
   templateUrl: './court-card.html',
   styleUrl: './court-card.scss',
 })
 export class CourtCard {
+  /** The court to render. */
   readonly court = input.required<Court>();
+  /** Player directory for resolving ids to display names. */
   readonly players = input.required<Record<PlayerId, Player>>();
+  /** Show the admin-only actions (Game finished / remove court). */
   readonly isAdmin = input<boolean>(false);
   /** When set, that player's tag is marked as "you". */
   readonly me = input<PlayerId | null>(null);
 
+  /** Admin tapped "Game finished" for this court. */
   readonly finish = output<void>();
+  /** Admin tapped "remove court". */
   readonly remove = output<void>();
 
   readonly seats = computed<SeatVm[]>(() => {

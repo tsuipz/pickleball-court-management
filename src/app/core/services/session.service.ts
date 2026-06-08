@@ -48,6 +48,12 @@ export class SessionService {
     return doc(this.fb.db, 'sessions', code.toUpperCase());
   }
 
+  /**
+   * Create a session: generate a join code + admin token, write the initial
+   * state, and remember the token on this device so this browser stays admin.
+   * Returns the join code. If `adminName` is given the organizer also joins the
+   * queue as a player.
+   */
   async createSession(
     name: string,
     courtCount: number,
@@ -113,6 +119,7 @@ export class SessionService {
     return state;
   }
 
+  /** Whether the current device's uid owns the given session. */
   isAdmin(state: SessionState | null): boolean {
     return !!state && state.adminUid === this.fb.uid();
   }
@@ -159,7 +166,16 @@ export class SessionService {
   }
 
   // --- Mutations ----------------------------------------------------------
+  // Every gameplay change below funnels through mutate(): the methods are thin
+  // wrappers that name the corresponding pure rotation function. Game rules live
+  // in rotation.ts, not here.
 
+  /**
+   * Apply a pure rotation function to the session inside a Firestore
+   * transaction (read current doc → transform → write whole doc back), so
+   * concurrent admin/player edits can't clobber each other. Failures are
+   * surfaced to the user via a snackbar rather than thrown.
+   */
   private async mutate(
     code: string,
     apply: (s: SessionState) => SessionState,
@@ -177,6 +193,7 @@ export class SessionService {
     }
   }
 
+  /** Join (or rename) the current player into the session's queue. */
   join(code: string, name: string): Promise<void> {
     const uid = this.fb.uid();
     if (!uid) {
@@ -190,12 +207,14 @@ export class SessionService {
     );
   }
 
-  /** Current player sits out / comes back / leaves. */
+  /** Bench a player (defaults to the current player) — they leave rotation but
+   *  stay in the session. */
   rest(code: string, id = this.fb.uid()): Promise<void> {
     if (!id) return Promise.resolve();
     return this.mutate(code, (s) => rotation.restPlayer(s, id));
   }
 
+  /** Bring a benched player back into the queue (defaults to the current player). */
   activate(code: string, id = this.fb.uid()): Promise<void> {
     if (!id) return Promise.resolve();
     return this.mutate(code, (s) => rotation.activatePlayer(s, id));
