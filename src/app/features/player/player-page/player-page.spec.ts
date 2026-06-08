@@ -16,8 +16,20 @@ import { PlayerPage } from './player-page';
 class FakeSessions {
   readonly uid = signal<string | null>(null);
   readonly state = signal<SessionState | null>(null);
+  calls: unknown[][] = [];
   watch() {
     return this.state;
+  }
+  private rec =
+    (name: string) =>
+    (...args: unknown[]) =>
+      this.calls.push([name, ...args]);
+  join = this.rec('join');
+  rest = this.rec('rest');
+  activate = this.rec('activate');
+  removePlayer = this.rec('removePlayer');
+  called(name: string) {
+    return this.calls.find((c) => c[0] === name);
   }
 }
 
@@ -36,7 +48,10 @@ function buildState(playerCount: number, courtCount = 1): SessionState {
   return s;
 }
 
-function makePage(state: SessionState | null, uid: string | null): PlayerPage {
+function makeWithFake(
+  state: SessionState | null,
+  uid: string | null,
+): { page: PlayerPage; fake: FakeSessions } {
   const fake = new FakeSessions();
   fake.state.set(state);
   fake.uid.set(uid);
@@ -49,7 +64,11 @@ function makePage(state: SessionState | null, uid: string | null): PlayerPage {
       },
     ],
   });
-  return TestBed.runInInjectionContext(() => new PlayerPage());
+  return { page: TestBed.runInInjectionContext(() => new PlayerPage()), fake };
+}
+
+function makePage(state: SessionState | null, uid: string | null): PlayerPage {
+  return makeWithFake(state, uid).page;
 }
 
 describe('PlayerPage.status', () => {
@@ -124,5 +143,46 @@ describe('PlayerPage helpers', () => {
   it('namesOf resolves ids to a readable list', () => {
     const page = makePage(buildState(4), 'p1');
     expect(page.namesOf(['p1', 'p2'])).toBe('Player 1, Player 2');
+  });
+
+  it('namesOf returns empty string with no session', () => {
+    const page = makePage(null, 'p1');
+    expect(page.namesOf(['p1'])).toBe('');
+  });
+});
+
+describe('PlayerPage actions', () => {
+  it('join forwards the trimmed name; ignores a blank name', async () => {
+    const { page, fake } = makeWithFake(buildState(2), 'p9');
+    page.name.set('  Jordan  ');
+    await page.join();
+    expect(fake.called('join')).toEqual(['join', 'TEST1', 'Jordan']);
+
+    fake.calls = [];
+    page.name.set('   ');
+    await page.join();
+    expect(fake.called('join')).toBeUndefined();
+  });
+
+  it('rest and back forward to the service', () => {
+    const { page, fake } = makeWithFake(buildState(4), 'p1');
+    page.rest();
+    page.back();
+    expect(fake.called('rest')).toEqual(['rest', 'TEST1']);
+    expect(fake.called('activate')).toEqual(['activate', 'TEST1']);
+  });
+
+  it('leave removes the player when confirmed', () => {
+    const { page, fake } = makeWithFake(buildState(4), 'p1');
+    globalThis.confirm = () => true;
+    page.leave();
+    expect(fake.called('removePlayer')).toEqual(['removePlayer', 'TEST1', 'p1']);
+  });
+
+  it('leave does nothing when cancelled', () => {
+    const { page, fake } = makeWithFake(buildState(4), 'p1');
+    globalThis.confirm = () => false;
+    page.leave();
+    expect(fake.called('removePlayer')).toBeUndefined();
   });
 });

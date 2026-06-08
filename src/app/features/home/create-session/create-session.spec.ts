@@ -11,12 +11,15 @@ class FakeRouter {
   }
 }
 
-function setup(): { cmp: CreateSession; router: FakeRouter } {
+function setup(sessions: Partial<SessionService> = {}): {
+  cmp: CreateSession;
+  router: FakeRouter;
+} {
   const router = new FakeRouter();
   TestBed.configureTestingModule({
     providers: [
       { provide: Router, useValue: router },
-      { provide: SessionService, useValue: {} },
+      { provide: SessionService, useValue: sessions },
     ],
   });
   const cmp = TestBed.runInInjectionContext(() => new CreateSession());
@@ -72,5 +75,29 @@ describe('CreateSession.bump', () => {
     const { cmp } = setup();
     cmp.bump(100);
     expect(cmp.courtCount()).toBe(20);
+  });
+});
+
+describe('CreateSession.create', () => {
+  it('creates a session and navigates to its admin view', async () => {
+    const { cmp, router } = setup({
+      createSession: async () => 'NEWXY',
+    } as Partial<SessionService>);
+    cmp.name.set('Friday');
+    cmp.yourName.set('Pat');
+    await cmp.create();
+    expect(router.calls).toContainEqual(['/session', 'NEWXY', 'admin']);
+  });
+
+  it('surfaces an error and re-enables the button on failure', async () => {
+    const { cmp, router } = setup({
+      createSession: async () => {
+        throw new Error('offline');
+      },
+    } as Partial<SessionService>);
+    await cmp.create();
+    expect(cmp.error()).toBe('offline');
+    expect(cmp.creating()).toBe(false);
+    expect(router.calls).toEqual([]);
   });
 });
