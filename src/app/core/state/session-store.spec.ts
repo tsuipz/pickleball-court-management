@@ -323,6 +323,53 @@ describe('SessionStore mutation forwarding (object → positional args)', () => 
   });
 });
 
+describe('SessionStore optimistic echo', () => {
+  it('paints the predicted state before the write settles', () => {
+    const { store } = makeLive(buildState(4)); // 1 court
+    expect(store.state()?.courts.length).toBe(1);
+    store.addCourt({ code: 'TEST1' }); // not yet flushed
+    expect(store.state()?.courts.length).toBe(2); // instant echo
+  });
+
+  it('reflects a finished game in the queue immediately', () => {
+    const { store } = makeLive(buildState(6)); // p1-4 on court, p5,p6 wait
+    expect(store.queue().map((q) => q.id)).toEqual(['p5', 'p6']);
+    store.finishStandardGame({ code: 'TEST1', courtId: 'court-1' });
+    // court refills with p5,p6 + returning players; the waiters are now playing
+    expect(store.queue().map((q) => q.id)).not.toEqual(['p5', 'p6']);
+  });
+
+  it('rolls back to the pre-tap state when the write fails', async () => {
+    const { store, fake } = makeLive(buildState(4));
+    fake.rejectNext = true;
+    store.addCourt({ code: 'TEST1' });
+    expect(store.state()?.courts.length).toBe(2); // optimistic
+    await tick();
+    expect(store.state()?.courts.length).toBe(1); // rolled back
+    expect(store.error()).toBe('Could not add a court.');
+  });
+
+  it('lets the authoritative snapshot replace the echo on success', async () => {
+    const { store, fake } = makeLive(buildState(4));
+    store.addCourt({ code: 'TEST1' });
+    expect(store.state()?.courts.length).toBe(2); // optimistic
+    fake.flush();
+    await tick();
+    fake.emit(buildState(4, 3)); // server confirms a different shape
+    expect(store.state()?.courts.length).toBe(3); // server wins
+  });
+
+  it('does not clobber a later optimistic update when an earlier write fails', async () => {
+    const { store, fake } = makeLive(buildState(4, 2)); // 2 courts
+    fake.rejectNext = true; // the *first* call (removeCourt) will reject
+    store.removeCourt({ code: 'TEST1', courtId: 'court-2' }); // → 1 court
+    store.addCourt({ code: 'TEST1' }); // → back to 2 courts
+    expect(store.state()?.courts.length).toBe(2);
+    await tick(); // removeCourt rejects; its echo is no longer showing
+    expect(store.state()?.courts.length).toBe(2); // addCourt's echo preserved
+  });
+});
+
 describe('SessionStore.busy', () => {
   it('is false when no action is in flight', () => {
     const { store } = makeLive(buildState(4));
