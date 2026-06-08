@@ -100,17 +100,20 @@ both restrictions:
 | Prod (Auth domain)| `pickleball-court-management.firebaseapp.com/*`   |
 | Local dev         | `localhost:4200/*`                                |
 
-**2. API restrictions → Restrict key.** Limit the key to only the APIs this app
-actually calls, so a leaked key can't be repurposed for other billed APIs:
+**2. API restrictions → Restrict key.** The Firebase-created browser key already
+ships with **Restrict key** on, scoped to a Firebase-managed list of APIs — keep
+that list. It already includes the only four this app calls at runtime:
 
 - **Identity Toolkit API** — Firebase Anonymous Auth
 - **Token Service API** — auth token refresh
 - **Cloud Firestore API** — the single `sessions/{code}` doc read/write path
 - **Firebase Installations API** — SDK bootstrap
 
-(`measurementId` analytics works without an extra key API, so it isn't listed.
-If you later add Storage, Remote Config, or full Analytics event ingestion, add
-the matching API here or those calls will 403.)
+Don't hand-narrow the list to just those four: Firebase manages it and may re-add
+entries, and trimming it risks 403s for little gain (the referrer allowlist above
+is what actually guards a public key). `measurementId` analytics needs no extra
+key API. Only revisit this if you adopt a feature behind an API that *isn't*
+already listed.
 
 **Gotchas.** Restriction changes take a few minutes to propagate. A sudden
 site-wide `PERMISSION_DENIED` / 403 after a deploy usually means the API
