@@ -164,6 +164,21 @@ describe('SessionStore connection', () => {
     fake.emit(buildState(6)); // court fills with p1-4; p5,p6 wait
     expect(store.queue().map((q) => q.id)).toEqual(['p5', 'p6']);
   });
+
+  it('does not flag notFound while idle or once a session loads', () => {
+    const { store, fake } = makeStore();
+    expect(store.notFound()).toBe(false); // idle, no snapshot yet
+    fake.preset(buildState(2));
+    store.connect('test1');
+    expect(store.notFound()).toBe(false); // live with a doc
+  });
+
+  it('flags notFound when the live snapshot reports an absent doc', () => {
+    const { store } = makeLive(null); // snapshot arrives with no doc
+    expect(store.conn()).toBe('live');
+    expect(store.state()).toBeNull();
+    expect(store.notFound()).toBe(true);
+  });
 });
 
 describe('SessionStore selectors', () => {

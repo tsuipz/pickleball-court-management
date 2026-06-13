@@ -1,6 +1,6 @@
 import { Component, effect, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -28,6 +28,7 @@ import { CourtCard } from '../../admin/court-card/court-card';
 export class PlayerPage {
   private readonly store = inject(SessionStore);
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly notifications = inject(NotificationService);
   private readonly snack = inject(MatSnackBar);
 
@@ -54,6 +55,7 @@ export class PlayerPage {
   readonly benched = this.store.benched;
   readonly joined = this.store.joined;
   readonly status = this.store.status;
+  readonly notFound = this.store.notFound;
 
   /** Last turn-state we notified on, so we fire once per transition (not on
    *  every snapshot). `undefined` until the first state primes the baseline. */
@@ -131,6 +133,11 @@ export class PlayerPage {
 
   rest(): void {
     this.store.rest({ code: this.code });
+  }
+
+  /** Navigate back to the home / create-session page. */
+  goHome(): void {
+    this.router.navigate(['/']);
   }
 
   back(): void {

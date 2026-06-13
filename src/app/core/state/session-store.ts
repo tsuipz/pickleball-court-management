@@ -126,6 +126,14 @@ export const SessionStore = signalStore(
     /** Whether the current device owns (is admin of) this session. */
     isAdmin: computed(() => sessions.isAdmin(store.state())),
 
+    /**
+     * The snapshot has arrived but the session doc is absent — i.e. the code
+     * doesn't exist. Distinct from the still-loading case (`conn === 'connecting'`
+     * with no state yet), letting views show a "not found" dead-end instead of
+     * spinning forever.
+     */
+    notFound: computed(() => store.conn() === 'live' && store.state() === null),
+
     /** Whether there is a snapshot to single-step undo to. */
     canUndo: computed(() => !!store.state()?.previous),
 

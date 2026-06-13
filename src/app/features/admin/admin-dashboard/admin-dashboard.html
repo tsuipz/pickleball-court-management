@@ -7,12 +7,32 @@
     {{ err }}
   </div>
 }
-@if (s === null) {
+@if (notFound()) {
+  <div class="flex min-h-dvh flex-col items-center justify-center p-8 text-center">
+    <div class="text-6xl">🤷</div>
+    <h1 class="mb-1 mt-2">Couldn't find {{ code }}</h1>
+    <p class="mb-6 text-ink-soft">No open session with that code. Double-check the link, or head back and start a new one.</p>
+    <button
+      (click)="goHome()"
+      class="inline-flex cursor-pointer items-center gap-2 rounded-full border-[2.5px] border-ink bg-lime px-5 py-[0.7rem] font-display font-extrabold text-ink shadow-hard-sm transition-transform active:translate-x-[3px] active:translate-y-[3px] active:shadow-none"
+    >
+      ← Back to home
+    </button>
+  </div>
+} @else if (s === null) {
   <div class="flex items-center justify-center gap-3 px-4 py-16 font-semibold text-ink-soft">
     <span class="ball" style="--s: 2.5rem"></span> Loading…
   </div>
 } @else {
   <header class="scoreboard sticky top-0 z-10 flex items-center gap-3 border-b-[3px] border-ink bg-court-deep px-4 py-[0.9rem] text-paper">
+    <button
+      (click)="goHome()"
+      title="Back to home"
+      aria-label="Back to home"
+      class="-ml-1 grid h-9 w-9 flex-none cursor-pointer place-items-center rounded-full border-2 border-paper/40 text-paper transition-colors hover:border-paper active:translate-x-[2px] active:translate-y-[2px]"
+    >
+      ←
+    </button>
     <div class="flex min-w-0 flex-col">
       <span class="font-display text-[0.66rem] font-bold tracking-[0.16em] opacity-70">
         THE DINK CLUB · ADMIN

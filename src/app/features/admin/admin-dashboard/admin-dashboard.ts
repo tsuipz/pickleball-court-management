@@ -69,6 +69,7 @@ export class AdminDashboard {
   readonly benched = this.store.benched;
   readonly canUndo = this.store.canUndo;
   readonly leaderboard = this.store.leaderboard;
+  readonly notFound = this.store.notFound;
 
   private claimTried = false;
 
@@ -123,6 +124,11 @@ export class AdminDashboard {
 
   addCourt(): void {
     this.store.addCourt({ code: this.code });
+  }
+
+  /** Navigate back to the home / create-session page. */
+  goHome(): void {
+    this.router.navigate(['/']);
   }
 
   removeCourt(court: Court): void {
